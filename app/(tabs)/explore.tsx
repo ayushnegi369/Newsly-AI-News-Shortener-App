@@ -1,110 +1,258 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { Collapsible } from '@/components/Collapsible';
-import { ExternalLink } from '@/components/ExternalLink';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  SafeAreaView,
+  ScrollView,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import { IconSymbol } from '@/components/ui/IconSymbol';
+import { useRouter } from 'expo-router';
 
-export default function TabTwoScreen() {
+const topicsData = [
+  {
+    id: '1',
+    image: { uri: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb' },
+    title: 'Health',
+    description: 'Get energizing workout moves, healthy recipes...',
+    saved: false,
+  },
+  {
+    id: '2',
+    image: { uri: 'https://images.unsplash.com/photo-1519125323398-675f0ddb6308' },
+    title: 'Technology',
+    description: 'The application of scientific knowledge to the practi...',
+    saved: true,
+  },
+  {
+    id: '3',
+    image: { uri: 'https://images.unsplash.com/photo-1465101046530-73398c7f28ca' },
+    title: 'Art',
+    description: 'Art is a diverse range of human activity, and result...',
+    saved: true,
+  },
+];
+
+const popularTopics = [
+  {
+    image: { uri: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb' },
+    category: 'Europe',
+    headline: 'Russian warship: Moskva sinks in Black Sea',
+    source: 'BBC News',
+    time: '4h ago',
+    sourceLogo: { uri: 'https://upload.wikimedia.org/wikipedia/commons/b/bc/BBC_News_2022_%28Alt%29.svg' },
+  },
+  {
+    image: { uri: 'https://images.unsplash.com/photo-1519125323398-675f0ddb6308' },
+    category: 'Health',
+    headline: 'Get energizing workout moves, healthy recipes...',
+    source: 'CNN',
+    time: '2h ago',
+    sourceLogo: { uri: 'https://upload.wikimedia.org/wikipedia/commons/6/6e/CNN_International_logo.svg' },
+  },
+  {
+    image: { uri: 'https://images.unsplash.com/photo-1465101046530-73398c7f28ca' },
+    category: 'Technology',
+    headline: 'The application of scientific knowledge to the practi...',
+    source: 'USA Today',
+    time: '1h ago',
+    sourceLogo: { uri: 'https://upload.wikimedia.org/wikipedia/commons/0/09/USA_Today_logo.svg' },
+  },
+];
+
+export default function Explore() {
+  const [topics, setTopics] = useState(topicsData);
+  const router = useRouter();
+
+  const toggleSave = (id: string) => {
+    setTopics(prev => prev.map(t => t.id === id ? { ...t, saved: !t.saved } : t));
+  };
+
+  const renderTopic = ({ item }: { item: typeof topicsData[0] }) => (
+    <View style={styles.topicRow} key={item.id}>
+      <Image source={item.image} style={styles.topicImage} />
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <Text style={styles.topicTitle}>{item.title}</Text>
+        <Text style={styles.topicDesc} numberOfLines={1}>{item.description}</Text>
+      </View>
+      <TouchableOpacity
+        style={[styles.saveBtn, item.saved && styles.saveBtnActive]}
+        onPress={() => toggleSave(item.id)}
+      >
+        <Text style={[styles.saveBtnText, item.saved && styles.saveBtnTextActive]}>
+          {item.saved ? 'Saved' : 'Save'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Explore</ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image source={require('@/assets/images/react-logo.png')} style={{ alignSelf: 'center' }} />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Custom fonts">
-        <ThemedText>
-          Open <ThemedText type="defaultSemiBold">app/_layout.tsx</ThemedText> to see how to load{' '}
-          <ThemedText style={{ fontFamily: 'SpaceMono' }}>
-            custom fonts such as this one.
-          </ThemedText>
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/versions/latest/sdk/font">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful <ThemedText type="defaultSemiBold">react-native-reanimated</ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <Text style={styles.heading}>Explore</Text>
+        <View style={styles.sectionRow}>
+          <Text style={[styles.sectionTitle, { marginLeft: 0 }]}>Topic</Text>
+          <TouchableOpacity>
+            <Text style={styles.seeAll}>See all</Text>
+          </TouchableOpacity>
+        </View>
+        {topics.map(topic => renderTopic({ item: topic }))}
+        <Text style={styles.sectionTitle}>Popular Topic</Text>
+        {popularTopics.map((item, idx) => (
+          <View style={[styles.popularCard, idx === 0 && { marginTop: 16 }]} key={idx}>
+            <Image source={item.image} style={styles.popularImage} />
+            <View style={{ padding: 14 }}>
+              <Text style={styles.popularCategory}>{item.category}</Text>
+              <Text style={styles.popularHeadline}>{item.headline}</Text>
+              <View style={styles.popularMetaRow}>
+                <Image source={item.sourceLogo} style={styles.sourceLogo} />
+                <Text style={styles.popularSource}>{item.source}</Text>
+                <Text style={styles.popularTime}>{item.time}</Text>
+                <TouchableOpacity style={{ marginLeft: 'auto' }}>
+                  <Ionicons name="ellipsis-horizontal" size={18} color="#888" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ))}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  container: {
+    flex: 1,
+    backgroundColor: '#181A20',
+    paddingTop: 32,
   },
-  titleContainer: {
+  scrollContent: {
+    paddingBottom: 32,
+  },
+  heading: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 32,
+    marginLeft: 16,
+    marginBottom: 18,
+    paddingTop: 8,
+  },
+  sectionRow: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginLeft: 16, // Only left margin for alignment
+    marginRight: 16,
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 18,
+    marginLeft: 16, // Add left margin for alignment with cards
+    marginBottom: 8,
+    marginTop: 16, // Add top margin for spacing above
+  },
+  seeAll: {
+    color: '#B0B3B8',
+    fontWeight: '600',
+    fontSize: 15,
+    marginRight: 4,
+  },
+  topicRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
+  topicImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: '#222',
+  },
+  topicTitle: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginBottom: 2,
+  },
+  topicDesc: {
+    color: '#B0B3B8',
+    fontSize: 14,
+  },
+  saveBtn: {
+    borderWidth: 1,
+    borderColor: '#3A8FFF',
+    borderRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    marginLeft: 10,
+    minWidth: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  saveBtnActive: {
+    backgroundColor: '#3A8FFF',
+    borderColor: '#3A8FFF',
+  },
+  saveBtnText: {
+    color: '#3A8FFF',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  saveBtnTextActive: {
+    color: '#fff',
+  },
+  popularCard: {
+    backgroundColor: '#23252B',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginBottom: 18,
+    overflow: 'hidden',
+  },
+  popularImage: {
+    width: '100%',
+    height: 160,
+    resizeMode: 'cover',
+  },
+  popularCategory: {
+    color: '#B0B3B8',
+    fontSize: 14,
+    marginBottom: 2,
+  },
+  popularHeadline: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  popularMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  sourceLogo: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    marginRight: 6,
+    backgroundColor: '#fff',
+  },
+  popularSource: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  popularTime: {
+    color: '#B0B3B8',
+    fontSize: 13,
+    marginRight: 8,
   },
 });
