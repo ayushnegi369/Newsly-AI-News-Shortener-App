@@ -1,11 +1,45 @@
 import React, { useState } from 'react';
-import { SafeAreaView, View, Text, TextInput, TouchableOpacity, StyleSheet, Pressable } from 'react-native';
+import { SafeAreaView, View, Text, TextInput, TouchableOpacity, StyleSheet, Pressable, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 export default function ForgotPassword() {
   const [input, setInput] = useState('');
   const router = useRouter();
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalMessage, setModalMessage] = useState('');
+
+  const showModal = (msg: string) => {
+    setModalMessage(msg);
+    setModalVisible(true);
+  };
+
+  const handleSendOTP = async () => {
+    if (!input) {
+      showModal('Please enter your email');
+      return;
+    }
+    try {
+      const response = await fetch('http://localhost:8080/request-password-reset-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: input }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        showModal(data.message);
+        setTimeout(() => {
+          setModalVisible(false);
+          router.push(('/password-reset-otp-verification?email=' + encodeURIComponent(input)) as any);
+        }, 1200);
+      } else {
+        const err = await response.text();
+        showModal(err);
+      }
+    } catch (err) {
+      showModal('Network error');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -30,10 +64,25 @@ export default function ForgotPassword() {
         />
       </View>
       <View style={styles.bottomButtonContainer}>
-        <TouchableOpacity style={styles.submitButton}>
+        <TouchableOpacity style={styles.submitButton} onPress={handleSendOTP}>
           <Text style={styles.submitButtonText}>Submit</Text>
         </TouchableOpacity>
       </View>
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <View style={{ backgroundColor: '#23262B', padding: 24, borderRadius: 12, alignItems: 'center', maxWidth: 320 }}>
+            <Text style={{ color: '#fff', fontSize: 18, marginBottom: 16, textAlign: 'center' }}>{modalMessage}</Text>
+            <TouchableOpacity onPress={() => setModalVisible(false)} style={{ backgroundColor: '#2979FF', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 32 }}>
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

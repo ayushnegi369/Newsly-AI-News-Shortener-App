@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SOURCES = [
   { name: 'CNBC', logo: 'https://logo.clearbit.com/cnbc.com' },
@@ -31,6 +32,17 @@ export default function ChooseNewsSource() {
     setFollowing(prev =>
       prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
     );
+  };
+
+  const handleNext = async () => {
+    // Set firstTimeLogin to false
+    const userStr = await AsyncStorage.getItem('user');
+    let user = userStr ? JSON.parse(userStr) : null;
+    if (user) {
+      user.firstTimeLogin = false;
+      await AsyncStorage.setItem('user', JSON.stringify(user));
+    }
+    router.push('/(tabs)');
   };
 
   return (
@@ -83,7 +95,7 @@ export default function ChooseNewsSource() {
       <TouchableOpacity
         style={[styles.nextButton, { opacity: following.length > 0 ? 1 : 0.5 }]}
         disabled={following.length === 0}
-        onPress={() => router.push('/(tabs)')}
+        onPress={handleNext}
       >
         <Text style={styles.nextButtonText}>Next</Text>
       </TouchableOpacity>

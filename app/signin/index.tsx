@@ -1,14 +1,138 @@
 import React, { useState } from 'react';
-import { SafeAreaView, View, Text, TextInput, TouchableOpacity, StyleSheet, Pressable, Image } from 'react-native';
+import { SafeAreaView, View, Text, TextInput, TouchableOpacity, StyleSheet, Pressable, Image, Modal } from 'react-native';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import { useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function SignIn() {
   const router = useRouter();
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalMessage, setModalMessage] = useState('');
+
+  WebBrowser.maybeCompleteAuthSession();
+
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    iosClientId: '135675268993-doffv77sb4487nvkkbd00mbqpnot90nm.apps.googleusercontent.com',
+    webClientId: '135675268993-tnnqtofg504b05o8rmpcv7fe0hp9m2np.apps.googleusercontent.com',
+  });
+
+  const showModal = (msg: string) => {
+    setModalMessage(msg);
+    setModalVisible(true);
+  };
+
+  // Manual sign-in handler
+  const handleManualSignIn = async () => {
+    if (!email || !password) {
+      showModal('Email and password are required');
+      return;
+    }
+    try {
+      const response = await fetch('http://localhost:8080/signin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        showModal(data.message);
+        setTimeout(async () => {
+          setModalVisible(false);
+          let user = { email: data.email, username: data.username, token: data.token, firstTimeLogin: true };
+          const stored = await AsyncStorage.getItem('user');
+          if (stored) {
+            try {
+              const parsed = JSON.parse(stored);
+              if (parsed.email === data.email) user.firstTimeLogin = parsed.firstTimeLogin;
+            } catch {}
+          }
+          await AsyncStorage.setItem('user', JSON.stringify(user));
+          if (user.firstTimeLogin) router.push('/choose-topic');
+          else router.push('/(tabs)');
+        }, 1200);
+        setEmail('');
+        setPassword('');
+      } else {
+        const err = await response.text();
+        showModal(err);
+        console.log('Manual sign-in error:', err);
+      }
+    } catch (err) {
+      showModal('Network error');
+      console.log('Manual sign-in network error:', err);
+    }
+  };
+
+  // Google sign-in handler (triggered by useEffect)
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { params } = response;
+      let email = '';
+      let username = '';
+      let idToken = '';
+      if (params?.id_token) {
+        idToken = params.id_token;
+        const base64Url = idToken.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(
+          atob(base64)
+            .split('')
+            .map(function (c) {
+              return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            })
+            .join('')
+        );
+        const payload = JSON.parse(jsonPayload);
+        email = payload.email;
+        username = payload.name;
+      }
+      if (email && username) {
+        fetch('http://localhost:8080/google-signin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, name: username }),
+        })
+          .then(async res => {
+            if (res.ok) {
+              const data = await res.json();
+              showModal(data.message);
+              setTimeout(async () => {
+                setModalVisible(false);
+                // Check if user is first time
+                let user = { email, username, token: idToken, firstTimeLogin: true };
+                const stored = await AsyncStorage.getItem('user');
+                if (stored) {
+                  try {
+                    const parsed = JSON.parse(stored);
+                    if (parsed.email === email) user.firstTimeLogin = parsed.firstTimeLogin;
+                  } catch {}
+                }
+                await AsyncStorage.setItem('user', JSON.stringify(user));
+                if (user.firstTimeLogin) router.push('/choose-topic');
+                else router.push('/(tabs)');
+              }, 1200);
+              setEmail('');
+              setPassword('');
+            } else {
+              const err = await res.text();
+              showModal(err);
+              console.log('Google sign-in error:', err);
+            }
+          })
+          .catch(err => {
+            showModal('Network error');
+            console.log('Google sign-in network error:', err);
+          });
+      }
+    }
+  }, [response]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -18,19 +142,19 @@ export default function SignIn() {
         <Text style={styles.subtitle}>Login to get started!</Text>
 
         <View style={{ marginTop: 32 }}>
-          <Text style={styles.label}>Username<Text style={{ color: '#2979FF' }}>*</Text></Text>
+          <Text style={styles.label}>Email<Text style={{ color: '#2979FF' }}>*</Text></Text>
           <TextInput
             style={styles.input}
-            placeholder="Enter your username"
+            placeholder="Enter your email"
             placeholderTextColor="#888"
-            value={username}
-            onChangeText={text => setUsername(text)}
+            value={email}
+            onChangeText={setEmail}
             autoCapitalize="none"
             autoCorrect={false}
-            textContentType="username"
+            keyboardType="email-address"
+            textContentType="emailAddress"
           />
         </View>
-
         <View style={{ marginTop: 16 }}>
           <Text style={styles.label}>Password<Text style={{ color: '#2979FF' }}>*</Text></Text>
           <View style={styles.passwordContainer}>
@@ -60,7 +184,7 @@ export default function SignIn() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.loginButton}>
+        <TouchableOpacity style={styles.loginButton} onPress={handleManualSignIn}>
           <Text style={styles.loginButtonText}>Login</Text>
         </TouchableOpacity>
 
@@ -71,7 +195,7 @@ export default function SignIn() {
             <FontAwesome name="facebook" size={24} color="#1877F3" style={{ marginRight: 8 }} />
             <Text style={styles.socialText}>Facebook</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.socialButton}>
+          <TouchableOpacity style={styles.socialButton} onPress={() => promptAsync()}>
             <FontAwesome name="google" size={24} color="#EA4335" style={{ marginRight: 8 }} />
             <Text style={styles.socialText}>Google</Text>
           </TouchableOpacity>
@@ -84,6 +208,21 @@ export default function SignIn() {
           </TouchableOpacity>
         </View>
       </View>
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <View style={{ backgroundColor: '#23262B', padding: 24, borderRadius: 12, alignItems: 'center', maxWidth: 320 }}>
+            <Text style={{ color: '#fff', fontSize: 18, marginBottom: 16, textAlign: 'center' }}>{modalMessage}</Text>
+            <TouchableOpacity onPress={() => setModalVisible(false)} style={{ backgroundColor: '#2979FF', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 32 }}>
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

@@ -1,19 +1,23 @@
 import React, { useRef, useState } from 'react';
-import { SafeAreaView, View, Text, TextInput, TouchableOpacity, StyleSheet, TextInput as RNTextInput } from 'react-native';
+import { SafeAreaView, View, Text, TextInput, TouchableOpacity, StyleSheet, TextInput as RNTextInput, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
-export default function OTPVerification() {
+export default function PasswordResetOTPVerification() {
   const [otp, setOtp] = useState(['', '', '', '']);
-  const [error, setError] = useState(true); // Simulate error for UI
-  const [timer, setTimer] = useState(56);
+  const [error, setError] = useState(false);
+  const [timer, setTimer] = useState(300); // 5 minutes
+  const [resendDisabled, setResendDisabled] = useState(false);
   const router = useRouter();
+  const { email } = useLocalSearchParams();
   const inputRefs: React.RefObject<RNTextInput | null>[] = [
     useRef<RNTextInput | null>(null),
     useRef<RNTextInput | null>(null),
     useRef<RNTextInput | null>(null),
     useRef<RNTextInput | null>(null),
   ];
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalMessage, setModalMessage] = useState('');
 
   // Timer effect
   React.useEffect(() => {
@@ -40,6 +44,43 @@ export default function OTPVerification() {
   const handleKeyPress = (e: any, idx: number) => {
     if (e.nativeEvent.key === 'Backspace' && !otp[idx] && idx > 0) {
       inputRefs[idx - 1].current?.focus();
+    }
+  };
+
+  const showModal = (msg: string) => {
+    setModalMessage(msg);
+    setModalVisible(true);
+  };
+
+  const handleVerify = async () => {
+    const enteredOtp = otp.join('');
+    if (enteredOtp.length !== 4) {
+      setError(true);
+      showModal('Please enter the 4-digit OTP');
+      return;
+    }
+    try {
+      const response = await fetch('http://localhost:8080/verify-password-reset-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp: enteredOtp }),
+      });
+      if (response.ok) {
+        setError(false);
+        const data = await response.json();
+        showModal(data.message);
+        setTimeout(() => {
+          setModalVisible(false);
+          router.push(('/reset-password?email=' + encodeURIComponent(email as string)) as any);
+        }, 1200);
+      } else {
+        setError(true);
+        const err = await response.text();
+        showModal(err);
+      }
+    } catch (err) {
+      setError(true);
+      showModal('Network error');
     }
   };
 
@@ -82,10 +123,25 @@ export default function OTPVerification() {
         </Text>
       </View>
       <View style={[styles.bottomButtonContainer, { backgroundColor: 'transparent' }]}>
-        <TouchableOpacity style={styles.verifyButton}>
+        <TouchableOpacity style={styles.verifyButton} onPress={handleVerify}>
           <Text style={styles.verifyButtonText}>Verify</Text>
         </TouchableOpacity>
       </View>
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <View style={{ backgroundColor: '#23262B', padding: 24, borderRadius: 12, alignItems: 'center', maxWidth: 320 }}>
+            <Text style={{ color: '#fff', fontSize: 18, marginBottom: 16, textAlign: 'center' }}>{modalMessage}</Text>
+            <TouchableOpacity onPress={() => setModalVisible(false)} style={{ backgroundColor: '#2979FF', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 32 }}>
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

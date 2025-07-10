@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/ThemedText';
 import { useRouter } from 'expo-router';
+import useAuthGuard from '../hooks/useAuthGuard';
 
 const topicsData = [
   {
@@ -64,6 +65,7 @@ const popularTopics = [
 ];
 
 export default function Explore() {
+  useAuthGuard();
   const [topics, setTopics] = useState(topicsData);
   const router = useRouter();
 

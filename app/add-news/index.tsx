@@ -11,8 +11,10 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import useAuthGuard from '../hooks/useAuthGuard';
 
 export default function AddNews() {
+  useAuthGuard();
   const [coverImage, setCoverImage] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');

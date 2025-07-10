@@ -16,6 +16,9 @@ import { ThemedText } from '@/components/ThemedText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
+import useAuthGuard from '../hooks/useAuthGuard';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect } from 'react';
 
 const { width } = Dimensions.get('window');
 
@@ -123,6 +126,13 @@ const categories = [
 ];
 
 export default function HomeScreen() {
+  useAuthGuard();
+  useEffect(() => {
+    (async () => {
+      const user = await AsyncStorage.getItem('user');
+      console.log('AsyncStorage user:', user);
+    })();
+  }, []);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const insets = useSafeAreaInsets();
@@ -158,61 +168,25 @@ export default function HomeScreen() {
           data={flatListData}
           renderItem={renderItem}
           keyExtractor={(_, idx) => idx.toString()}
-          ListHeaderComponent={() => [
-            (
-              <View key="mainHeader">
-                {/* Header */}
-                <View style={styles.headerRow}>
-                  <ThemedText style={styles.logoText} type="title">NEWSLY</ThemedText>
-                  <TouchableOpacity style={styles.lockIcon}>
-                    <Ionicons name="notifications-outline" size={20} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-                {/* Search Bar */}
-                <TouchableOpacity style={styles.searchContainer} activeOpacity={0.8} onPress={() => router.push('/search-section')}>
-                  <Ionicons name="search" size={20} color="#888" style={{ marginRight: 8 }} />
-                  <Text style={styles.searchInput}>Search</Text>
-                  <TouchableOpacity>
-                    <MaterialIcons name="tune" size={22} color="#888" />
-                  </TouchableOpacity>
+          ListHeaderComponent={
+            <View>
+              {/* Header */}
+              <View style={styles.headerRow}>
+                <ThemedText style={styles.logoText} type="title">NEWSLY</ThemedText>
+                <TouchableOpacity style={styles.lockIcon}>
+                  <Ionicons name="notifications-outline" size={20} color="#fff" />
                 </TouchableOpacity>
-                {/* Trending Section */}
-                <View style={styles.sectionHeaderRow}>
-                  <ThemedText style={styles.sectionTitle} type="subtitle">Trending</ThemedText>
-                  <TouchableOpacity onPress={() => router.push('/(tabs)/trending' as any)}>
-                    <ThemedText style={styles.seeAll}>See all</ThemedText>
-                  </TouchableOpacity>
-                </View>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.trendingScroll} contentContainerStyle={{ paddingLeft: 18, paddingRight: 4 }}>
-                  {trendingNews.map((item, idx) => (
-                    <TouchableOpacity key={idx} style={styles.trendingCard} activeOpacity={0.9}>
-                      <Image source={item.image} style={styles.trendingImage} resizeMode="cover" />
-                      <View style={{ padding: 14 }}>
-                        <ThemedText style={styles.newsCategory}>{item.category}</ThemedText>
-                        <ThemedText style={styles.newsHeadline} numberOfLines={2}>{item.headline}</ThemedText>
-                        <View style={styles.newsMetaRow}>
-                          <Image source={require('@/assets/images/favicon.png')} style={styles.sourceIcon} />
-                          <ThemedText style={styles.newsSource}>{item.source}</ThemedText>
-                          <ThemedText style={styles.newsTime}>{item.time}</ThemedText>
-                          <TouchableOpacity style={{ marginLeft: 'auto' }}>
-                            <MaterialIcons name="more-horiz" size={20} color="#888" />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-                {/* Latest Section */}
-                <View style={styles.latestSectionHeaderRow}>
-                  <ThemedText style={styles.sectionTitle} type="subtitle">Latest</ThemedText>
-                  <TouchableOpacity>
-                    <ThemedText style={styles.seeAll}>See all</ThemedText>
-                  </TouchableOpacity>
-                </View>
               </View>
-            ),
-            (
-              <View key="categoryTabs" style={{ backgroundColor: '#181A20' }}>
+              {/* Search Bar */}
+              <TouchableOpacity style={styles.searchContainer} activeOpacity={0.8} onPress={() => router.push('/search-section')}>
+                <Ionicons name="search" size={20} color="#888" style={{ marginRight: 8 }} />
+                <Text style={styles.searchInput}>Search</Text>
+                <TouchableOpacity>
+                  <MaterialIcons name="tune" size={22} color="#888" />
+                </TouchableOpacity>
+              </TouchableOpacity>
+              {/* Category Tabs - now directly below search bar */}
+              <View style={{ backgroundColor: '#181A20' }} className="this-section">
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryTabs}>
                   {categories.map(cat => (
                     <TouchableOpacity
@@ -226,10 +200,41 @@ export default function HomeScreen() {
                   ))}
                 </ScrollView>
               </View>
-            )
-          ]}
-          stickyHeaderIndices={[1]}
-          ListHeaderComponentStyle={{ paddingBottom: 0 }}
+              {/* Trending Section */}
+              <View style={styles.sectionHeaderRow}>
+                <ThemedText style={styles.sectionTitle} type="subtitle">Trending</ThemedText>
+                <TouchableOpacity onPress={() => router.push('/(tabs)/trending' as any)}>
+                  <ThemedText style={styles.seeAll}>See all</ThemedText>
+                </TouchableOpacity>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.trendingScroll} contentContainerStyle={{ paddingLeft: 18, paddingRight: 4 }}>
+                {trendingNews.map((item, idx) => (
+                  <TouchableOpacity key={idx} style={styles.trendingCard} activeOpacity={0.9}>
+                    <Image source={item.image} style={styles.trendingImage} resizeMode="cover" />
+                    <View style={{ padding: 14 }}>
+                      <ThemedText style={styles.newsCategory}>{item.category}</ThemedText>
+                      <ThemedText style={styles.newsHeadline} numberOfLines={2}>{item.headline}</ThemedText>
+                      <View style={styles.newsMetaRow}>
+                        <Image source={require('@/assets/images/favicon.png')} style={styles.sourceIcon} />
+                        <ThemedText style={styles.newsSource}>{item.source}</ThemedText>
+                        <ThemedText style={styles.newsTime}>{item.time}</ThemedText>
+                        <TouchableOpacity style={{ marginLeft: 'auto' }}>
+                          <MaterialIcons name="more-horiz" size={20} color="#888" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              {/* Latest Section */}
+              <View style={styles.latestSectionHeaderRow}>
+                <ThemedText style={styles.sectionTitle} type="subtitle">Latest</ThemedText>
+                <TouchableOpacity>
+                  <ThemedText style={styles.seeAll}>See all</ThemedText>
+                </TouchableOpacity>
+              </View>
+            </View>
+          }
           contentContainerStyle={{ paddingBottom: 24 }}
           showsVerticalScrollIndicator={false}
         />

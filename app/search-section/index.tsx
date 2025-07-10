@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/ThemedText';
 import { useRouter } from 'expo-router';
+import useAuthGuard from '../hooks/useAuthGuard';
 
 const TABS = ['News', 'Topics', 'Author'];
 
@@ -135,6 +136,7 @@ const authorData = [
 ];
 
 export default function SearchSection() {
+  useAuthGuard();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('News');
   const [search, setSearch] = useState('');
@@ -203,7 +205,7 @@ export default function SearchSection() {
             <ThemedText style={styles.authorFollowers}>{item.followers} Followers</ThemedText>
           </View>
           <TouchableOpacity style={[styles.followBtn, item.following && styles.followingBtn]}>
-            <Text style={[styles.followBtnText, item.following && styles.followingBtnTextActive]}>{item.following ? 'Following' : '+ Follow'}</Text>
+            <Text style={[styles.followBtnText, item.following && styles.followBtnTextActive]}>{item.following ? 'Following' : '+ Follow'}</Text>
           </TouchableOpacity>
         </View>
       )}

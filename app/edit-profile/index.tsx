@@ -12,17 +12,88 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import useAuthGuard from '../hooks/useAuthGuard';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect } from 'react';
 
 const { width } = Dimensions.get('window');
 
 export default function EditProfile() {
+  useAuthGuard();
   const router = useRouter();
-  const [username, setUsername] = useState('wilsonfranci');
-  const [fullName, setFullName] = useState('Wilson Franci');
-  const [email, setEmail] = useState('example@youremail.com');
-  const [phone, setPhone] = useState('+62-8421-4512-2531');
-  const [bio, setBio] = useState('Lorem Ipsum is simply dummy text of the printing');
-  const [website, setWebsite] = useState('https://yourwebsite.com');
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [bio, setBio] = useState('');
+  const [website, setWebsite] = useState('');
+  const [avatar, setAvatar] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      setLoading(true);
+      try {
+        const userStr = await AsyncStorage.getItem('user');
+        if (!userStr) return;
+        const userObj = JSON.parse(userStr);
+        setEmail(userObj.email);
+        // Fetch user details from backend
+        const res = await fetch(`http://localhost:8080/get-user-details?email=${encodeURIComponent(userObj.email)}`);
+        if (!res.ok) throw new Error('Failed to fetch user details');
+        const data = await res.json();
+        setUsername(data.username || '');
+        setFullName(data.fullName || '');
+        setPhone(data.phone || '');
+        setBio(data.bio || '');
+        setWebsite(data.website || '');
+        setAvatar(data.avatar || '');
+      } catch (e) {
+        setError('Failed to load user details');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  const handleSave = async () => {
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    const requestBody = { email, username, password, fullName, phone, bio, website, avatar };
+    console.log('Sending update request:', requestBody);
+    try {
+      const res = await fetch('http://localhost:8080/update-user-details', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+      console.log('Response status:', res.status);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.log('Error response:', errorText);
+        throw new Error('Failed to update user details');
+      }
+      setSuccess('Profile updated successfully');
+      setPassword('');
+      // Optionally update AsyncStorage username
+      const userStr = await AsyncStorage.getItem('user');
+      if (userStr) {
+        const userObj = JSON.parse(userStr);
+        userObj.username = username;
+        await AsyncStorage.setItem('user', JSON.stringify(userObj));
+      }
+    } catch (e) {
+      console.log('Caught error:', e);
+      setError('Failed to update profile');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -31,20 +102,29 @@ export default function EditProfile() {
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="close" size={28} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit Profile</Text>
-        <TouchableOpacity>
-          <Ionicons name="checkmark" size={28} color="#fff" />
-        </TouchableOpacity>
+        <View style={styles.headerTitleContainer} pointerEvents="none">
+          <Text style={styles.headerTitle}>Edit Profile</Text>
+        </View>
       </View>
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }} showsVerticalScrollIndicator={false}>
         {/* Avatar */}
         <View style={styles.avatarRow}>
-          <Image source={{ uri: 'https://randomuser.me/api/portraits/men/32.jpg' }} style={styles.avatar} />
+          <Image source={{ uri: avatar || 'https://randomuser.me/api/portraits/men/32.jpg' }} style={styles.avatar} />
           <TouchableOpacity style={styles.cameraBtn}>
             <Ionicons name="camera" size={22} color="#fff" />
           </TouchableOpacity>
         </View>
         {/* Form */}
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Avatar URL</Text>
+          <TextInput
+            style={styles.input}
+            value={avatar}
+            onChangeText={setAvatar}
+            placeholder="Avatar URL"
+            placeholderTextColor="#888"
+          />
+        </View>
         <View style={styles.formGroup}>
           <Text style={styles.label}>Username</Text>
           <TextInput
@@ -66,19 +146,17 @@ export default function EditProfile() {
           />
         </View>
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Email Address<Text style={{ color: '#ff5a5f' }}>*</Text></Text>
+          <Text style={styles.label}>Email Address</Text>
           <TextInput
             style={styles.input}
             value={email}
-            onChangeText={setEmail}
+            editable={false}
             placeholder="Email Address"
             placeholderTextColor="#888"
-            keyboardType="email-address"
-            autoCapitalize="none"
           />
         </View>
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Phone Number<Text style={{ color: '#ff5a5f' }}>*</Text></Text>
+          <Text style={styles.label}>Phone Number</Text>
           <TextInput
             style={styles.input}
             value={phone}
@@ -109,6 +187,22 @@ export default function EditProfile() {
             autoCapitalize="none"
           />
         </View>
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Password</Text>
+          <TextInput
+            style={styles.input}
+            value={password}
+            onChangeText={setPassword}
+            placeholder="New Password"
+            placeholderTextColor="#888"
+            secureTextEntry
+          />
+        </View>
+        <TouchableOpacity style={[styles.editBtn, { margin: 16 }]} onPress={handleSave} disabled={loading}>
+          <Text style={styles.editBtnText}>{loading ? 'Saving...' : 'Save'}</Text>
+        </TouchableOpacity>
+        {error ? <Text style={{ color: 'red', textAlign: 'center' }}>{error}</Text> : null}
+        {success ? <Text style={{ color: 'green', textAlign: 'center' }}>{success}</Text> : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -132,6 +226,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 20,
     textAlign: 'center',
+  },
+  headerTitleContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: -1,
   },
   avatarRow: {
     alignItems: 'center',
@@ -173,5 +277,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingHorizontal: 14,
     paddingVertical: 14,
+  },
+  editBtn: {
+    backgroundColor: '#2563eb',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import useAuthGuard from '../hooks/useAuthGuard';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
@@ -59,8 +61,35 @@ const newsData = [
 ];
 
 export default function Profile() {
+  useAuthGuard();
   const [activeTab, setActiveTab] = useState('Recent');
+  const [username, setUsername] = useState('');
+  const [avatar, setAvatar] = useState('');
+  const [bio, setBio] = useState('');
   const router = useRouter();
+
+  React.useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const userStr = await AsyncStorage.getItem('user');
+        if (userStr) {
+          const userObj = JSON.parse(userStr);
+          const email = userObj.email;
+          const res = await fetch(`http://localhost:8080/get-user-details?email=${encodeURIComponent(email)}`);
+          if (!res.ok) throw new Error('Failed to fetch user details');
+          const data = await res.json();
+          setUsername(data.username || '');
+          setAvatar(data.avatar || 'https://randomuser.me/api/portraits/men/32.jpg');
+          setBio(data.bio || '');
+        }
+      } catch (e) {
+        setUsername('');
+        setAvatar('https://randomuser.me/api/portraits/men/32.jpg');
+        setBio('');
+      }
+    };
+    fetchUserProfile();
+  }, []);
 
   const renderNews = ({ item }: { item: typeof newsData[0] }) => (
     <View style={styles.newsCard}>
@@ -90,7 +119,7 @@ export default function Profile() {
         </TouchableOpacity>
       </View>
       <View style={styles.avatarRow}>
-        <Image source={{ uri: user.avatar }} style={styles.avatar} />
+        <Image source={{ uri: avatar }} style={styles.avatar} />
       </View>
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
@@ -106,8 +135,8 @@ export default function Profile() {
           <Text style={styles.statLabel}>News</Text>
         </View>
       </View>
-      <Text style={styles.userName}>{user.name}</Text>
-      <Text style={styles.userBio}>{user.bio}</Text>
+      <Text style={styles.userName}>{username}</Text>
+      <Text style={styles.userBio}>{bio}</Text>
       <View style={styles.buttonRow}>
         <TouchableOpacity style={styles.editBtn} onPress={() => router.push('/edit-profile')}>
           <Text style={styles.editBtnText}>Edit profile</Text>

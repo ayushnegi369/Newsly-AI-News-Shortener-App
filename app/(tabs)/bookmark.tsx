@@ -13,6 +13,7 @@ import {
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/ThemedText';
 import { useRouter } from 'expo-router';
+import useAuthGuard from '../hooks/useAuthGuard';
 
 const bookmarkData = [
   {
@@ -57,7 +58,8 @@ const bookmarkData = [
   },
 ];
 
-export default function Bookmark() {
+export default function BookmarkScreen() {
+  useAuthGuard();
   const [search, setSearch] = useState('');
   const inputRef = useRef<TextInput>(null);
   const router = useRouter();

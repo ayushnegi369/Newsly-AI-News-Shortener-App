@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
-import { SafeAreaView, View, Text, TextInput, TouchableOpacity, StyleSheet, Pressable } from 'react-native';
+import { SafeAreaView, View, Text, TextInput, TouchableOpacity, StyleSheet, Pressable, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import { useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function SignUp() {
   const router = useRouter();
@@ -11,6 +15,118 @@ export default function SignUp() {
   const [showPassword, setShowPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalMessage, setModalMessage] = useState('');
+
+  WebBrowser.maybeCompleteAuthSession();
+
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    iosClientId: '135675268993-doffv77sb4487nvkkbd00mbqpnot90nm.apps.googleusercontent.com',
+    webClientId: '135675268993-tnnqtofg504b05o8rmpcv7fe0hp9m2np.apps.googleusercontent.com',
+  });
+
+  const showModal = (msg: string) => {
+    setModalMessage(msg);
+    setModalVisible(true);
+  };
+
+  // Handle for Google sign-in
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { authentication, params } = response;
+      const accessToken = authentication?.accessToken;
+      const idToken = params?.id_token;
+
+      let email = '';
+      let name = '';
+
+      if (idToken) {
+        // Decode JWT payload
+        const base64Url = idToken.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(
+          atob(base64)
+            .split('')
+            .map(function (c) {
+              return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            })
+            .join('')
+        );
+        const payload = JSON.parse(jsonPayload);
+        email = payload.email;
+        name = payload.name;
+      }
+
+      console.log('Access Token:', accessToken);
+      console.log('Email:', email);
+      console.log('Name:', name);
+
+      // Send name and email to backend
+      if (name && email) {
+        fetch('http://localhost:8080/google-signup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name, email }),
+        })
+          .then(async res => res.json())
+          .then(async data => {
+            showModal(data.message);
+            setTimeout(async () => {
+              setModalVisible(false);
+              await AsyncStorage.setItem('user', JSON.stringify({ email, username: name, token: idToken, firstTimeLogin: true }));
+              router.push('/choose-topic');
+            }, 1200);
+            setUsername('');
+            setEmail('');
+            setPassword('');
+            setConfirmPassword('');
+          })
+          .catch(err => {
+            showModal('Backend error');
+          });
+      }
+    }
+  }, [response]);
+
+  // Handler for manual signup
+  const handleManualSignup = async () => {
+    console.log('Manual Signup Attempt:', { username, email, password, confirmPassword });
+    if (!username || !email || !password || !confirmPassword) {
+      showModal('All fields are required');
+      return;
+    }
+    if (password !== confirmPassword) {
+      showModal('Passwords do not match');
+      return;
+    }
+    try {
+      const response = await fetch('http://localhost:8080/request-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, email, password }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        showModal(data.message);
+        // Navigate to signup-otp-verification page, passing email
+        router.push({ pathname: '/signup-otp-verification', params: { email } });
+        // Optionally clear input fields
+        setUsername('');
+        setEmail('');
+        setPassword('');
+        setConfirmPassword('');
+      } else {
+        const err = await response.text(); // <-- Parse as text, not JSON
+        showModal(err);
+      }
+    } catch (err) {
+      showModal('Network error');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -94,7 +210,7 @@ export default function SignUp() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.loginButton}>
+        <TouchableOpacity style={styles.loginButton} onPress={handleManualSignup}>
           <Text style={styles.loginButtonText}>Sign Up</Text>
         </TouchableOpacity>
 
@@ -105,7 +221,7 @@ export default function SignUp() {
             <FontAwesome name="facebook" size={24} color="#1877F3" style={{ marginRight: 8 }} />
             <Text style={styles.socialText}>Facebook</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.socialButton}>
+          <TouchableOpacity style={styles.socialButton} onPress={() => promptAsync()}>
             <FontAwesome name="google" size={24} color="#EA4335" style={{ marginRight: 8 }} />
             <Text style={styles.socialText}>Google</Text>
           </TouchableOpacity>
@@ -118,6 +234,21 @@ export default function SignUp() {
           </TouchableOpacity>
         </View>
       </View>
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <View style={{ backgroundColor: '#23262B', padding: 24, borderRadius: 12, alignItems: 'center', maxWidth: 320 }}>
+            <Text style={{ color: '#fff', fontSize: 18, marginBottom: 16, textAlign: 'center' }}>{modalMessage}</Text>
+            <TouchableOpacity onPress={() => setModalVisible(false)} style={{ backgroundColor: '#2979FF', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 32 }}>
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

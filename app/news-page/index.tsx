@@ -6,15 +6,17 @@ import {
   TouchableOpacity,
   Image,
   SafeAreaView,
-  ScrollView,
+  ScrollView, 
   Platform,
   TextInput,
   FlatList,
 } from 'react-native';
 import { Ionicons, MaterialIcons, FontAwesome } from '@expo/vector-icons';
 import RBSheet from 'react-native-raw-bottom-sheet';
+import useAuthGuard from '../hooks/useAuthGuard';
 
 export default function NewsPage() {
+  useAuthGuard();
   // Mock data
   const author = {
     name: 'BBC News',

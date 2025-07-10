@@ -11,6 +11,7 @@ import {
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { ThemedText } from '@/components/ThemedText';
+import useAuthGuard from '../../hooks/useAuthGuard';
 
 const { width } = Dimensions.get('window');
 
@@ -39,7 +40,8 @@ const trendingNews = [
   },
 ];
 
-export default function TrendingPage() {
+export default function TrendingScreen() {
+  useAuthGuard();
   const router = useRouter();
 
   const renderItem = ({ item }: { item: typeof trendingNews[0] }) => (

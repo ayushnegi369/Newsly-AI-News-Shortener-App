@@ -60,7 +60,7 @@ export default function WelcomeCarousel() {
       }
       setCurrentIndex(currentIndex + 1);
     } else {
-      router.replace('/select-country');
+      router.replace('/signin');
     }
   };
 

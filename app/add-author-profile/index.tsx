@@ -12,8 +12,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import useAuthGuard from '../hooks/useAuthGuard';
 
 export default function AddAuthorProfile() {
+  useAuthGuard();
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [bio, setBio] = useState('');
