@@ -41,6 +41,13 @@ export default function ChooseNewsSource() {
     if (user) {
       user.firstTimeLogin = false;
       await AsyncStorage.setItem('user', JSON.stringify(user));
+      if (user.email && following.length > 0) {
+        await fetch('http://localhost:8080/update-user-details', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: user.email, newsSources: following }),
+        });
+      }
     }
     router.push('/(tabs)');
   };

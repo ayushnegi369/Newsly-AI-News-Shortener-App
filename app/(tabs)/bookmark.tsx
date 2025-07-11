@@ -14,6 +14,8 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/ThemedText';
 import { useRouter } from 'expo-router';
 import useAuthGuard from '../hooks/useAuthGuard';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect } from 'react';
 
 const bookmarkData = [
   {
@@ -58,43 +60,99 @@ const bookmarkData = [
   },
 ];
 
-export default function BookmarkScreen() {
+const API_BASE = 'http://localhost:8080';
+
+export default function Bookmark() {
   useAuthGuard();
-  const [search, setSearch] = useState('');
-  const inputRef = useRef<TextInput>(null);
+  const [bookmarks, setBookmarks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [user, setUser] = useState<string | null>(null);
   const router = useRouter();
 
-  const renderItem = ({ item }: { item: typeof bookmarkData[0] }) => (
-    <View style={styles.newsCard}>
-      <Image source={item.image} style={styles.newsImage} />
-      <View style={{ flex: 1, marginLeft: 10 }}>
-        <ThemedText style={styles.newsCategory}>{item.category}</ThemedText>
-        <ThemedText style={styles.newsHeadline} numberOfLines={2}>{item.headline}</ThemedText>
-        <View style={styles.newsMetaRow}>
-          <Image source={item.sourceLogo} style={styles.sourceLogo} />
-          <ThemedText style={styles.newsSource}>{item.source}</ThemedText>
-          <ThemedText style={styles.newsTime}>{item.time}</ThemedText>
-          <TouchableOpacity style={{ marginLeft: 'auto' }}>
-            <Ionicons name="ellipsis-horizontal" size={18} color="#888" />
+  // Fetch user email from AsyncStorage
+  useEffect(() => {
+    (async () => {
+      const userStr = await AsyncStorage.getItem('user');
+      let email = null;
+      try {
+        const userObj = userStr ? JSON.parse(userStr) : null;
+        email = userObj?.email || null;
+      } catch {}
+      setUser(email);
+    })();
+  }, []);
+
+  // Fetch bookmarks
+  const fetchBookmarks = async (userEmail: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/bookmarks/list?user=${encodeURIComponent(userEmail)}`);
+      const data = await res.json();
+      setBookmarks(data.bookmarks || []);
+    } catch {
+      setError('Failed to load bookmarks');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      const userStr = await AsyncStorage.getItem('user');
+      let email = null;
+      try {
+        const userObj = userStr ? JSON.parse(userStr) : null;
+        email = userObj?.email || null;
+      } catch {}
+      setUser(email);
+      if (email) fetchBookmarks(email);
+    })();
+  }, []);
+
+  // Remove bookmark
+  const removeBookmark = async (article: any) => {
+    if (!user) return;
+    setLoading(true);
+    fetch(`${API_BASE}/bookmarks/remove`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user, articleId: article.url || article._id })
+    })
+      .then(res => res.json())
+      .then(() => setBookmarks(bms => bms.filter(bm => (bm.url || bm._id) !== (article.url || article._id))))
+      .catch(() => setError('Failed to remove bookmark'))
+      .finally(() => setLoading(false));
+  };
+
+  const renderItem = ({ item }: { item: any }) => (
+    <TouchableOpacity style={styles.card} activeOpacity={0.9} onPress={() => router.push({ pathname: '/news-page', params: { article: JSON.stringify(item) } })}>
+      <Image source={{ uri: item.image || item.urlToImage || '' }} style={styles.image} resizeMode="cover" />
+      <View style={{ paddingHorizontal: 8, paddingTop: 8, paddingBottom: 12, flex: 1 }}>
+        <ThemedText style={styles.category}>{item.category || item.country}</ThemedText>
+        <ThemedText style={styles.headline}>{item.title || item.headline}</ThemedText>
+        <View style={styles.metaRow}>
+          <Image source={require('@/assets/images/favicon.png')} style={styles.sourceIcon} />
+          <ThemedText style={styles.source}>{item.newsCompany || item.source}</ThemedText>
+          <ThemedText style={styles.time}>{item.publishedAgo || item.time}</ThemedText>
+          <TouchableOpacity style={{ marginLeft: 'auto' }} onPress={() => removeBookmark(item)}>
+            <Ionicons name="bookmark" size={20} color="#E5397B" />
           </TouchableOpacity>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   return (
     <SafeAreaView style={styles.container}>
       <ThemedText style={styles.heading}>Bookmark</ThemedText>
-      {/* Search Bar */}
-      <TouchableOpacity style={styles.searchBarRow} activeOpacity={0.8} onPress={() => router.push('/search-section')}>
-        <Ionicons name="search" size={22} color="#888" style={{ marginLeft: 8, marginRight: 8 }} />
-        <Text style={styles.searchInput}>Search</Text>
-        <TouchableOpacity style={{ marginRight: 8 }}>
-          <MaterialIcons name="tune" size={22} color="#888" />
-        </TouchableOpacity>
-      </TouchableOpacity>
+      {/* Search Bar (optional, not implemented) */}
+      {loading && <Text style={{ color: '#fff', textAlign: 'center', marginTop: 24 }}>Loading...</Text>}
+      {error && <Text style={{ color: 'red', textAlign: 'center', marginTop: 24 }}>{error}</Text>}
+      {!loading && bookmarks.length === 0 && <Text style={{ color: '#fff', textAlign: 'center', marginTop: 24 }}>No data available</Text>}
       <FlatList
-        data={bookmarkData}
+        data={bookmarks}
         keyExtractor={(_, idx) => idx.toString()}
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
@@ -181,5 +239,54 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 17,
     paddingVertical: 0,
+  },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#23252B',
+    borderRadius: 14,
+    marginHorizontal: 16,
+    marginBottom: 14,
+    overflow: 'hidden',
+  },
+  image: {
+    width: 60,
+    height: 60,
+    borderRadius: 10,
+    backgroundColor: '#222',
+  },
+  category: {
+    color: '#B0B3B8',
+    fontSize: 14,
+    marginBottom: 2,
+  },
+  headline: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  sourceIcon: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    marginRight: 6,
+    backgroundColor: '#fff',
+  },
+  source: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  time: {
+    color: '#B0B3B8',
+    fontSize: 13,
+    marginRight: 8,
   },
 });

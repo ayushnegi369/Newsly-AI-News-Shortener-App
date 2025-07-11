@@ -45,6 +45,7 @@
       "typedRoutes": true
     },
     "extra": {
+      "COHERE_API_KEY": "glas5piqEnfm4SdqzvOzlKHBkbATWCNotEEx0SkR",
       "router": {},
       "eas": {
         "projectId": "36018b22-4d6f-4cb4-8943-01f8aa8fe144"

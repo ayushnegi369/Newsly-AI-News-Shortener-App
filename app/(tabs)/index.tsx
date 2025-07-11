@@ -10,6 +10,7 @@ import {
   ScrollView,
   Dimensions,
   Text,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/ThemedText';
@@ -17,100 +18,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import useAuthGuard from '../hooks/useAuthGuard';
+import { useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useEffect } from 'react';
 
 const { width } = Dimensions.get('window');
-
-const trendingNews = [
-  {
-    image: { uri: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb' },
-    category: 'Europe',
-    headline: 'Russian warship: Moskva sinks in Black Sea',
-    source: 'BBC News',
-    time: '4h ago',
-  },
-  {
-    image: { uri: 'https://images.unsplash.com/photo-1519125323398-675f0ddb6308' },
-    category: 'Business',
-    headline: 'Stock markets rally as tech shares surge worldwide',
-    source: 'CNN Business',
-    time: '2h ago',
-  },
-];
-
-const latestNews = [
-  {
-    image: { uri: 'https://images.unsplash.com/photo-1465101046530-73398c7f28ca' },
-    category: 'Europe',
-    headline: "Ukraine's President Zelensky to BBC: Blood money being paid...",
-    source: 'BBC News',
-    time: '14m ago',
-  },
-  {
-    image: { uri: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429' },
-    category: 'Travel',
-    headline: 'Her train broke down. Her phone died. And then she met her... ',
-    source: 'CNN',
-    time: '21m ago',
-  },
-  {
-    image: { uri: 'https://images.unsplash.com/photo-1519125323398-675f0ddb6308' },
-    category: 'Business',
-    headline: 'Stock markets rally as tech shares surge worldwide',
-    source: 'CNN Business',
-    time: '2h ago',
-  },
-  {
-    image: { uri: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e' },
-    category: 'Health',
-    headline: 'New health guidelines released for 2024',
-    source: 'Healthline',
-    time: '1h ago',
-  },
-  {
-    image: { uri: 'https://images.unsplash.com/photo-1519985176271-adb1088fa94c' },
-    category: 'Science',
-    headline: 'NASA launches new Mars rover mission',
-    source: 'NASA',
-    time: '3h ago',
-  },
-  {
-    image: { uri: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb' },
-    category: 'Sports',
-    headline: 'Champions League: Dramatic finish in semi-finals',
-    source: 'ESPN',
-    time: '30m ago',
-  },
-  {
-    image: { uri: 'https://images.unsplash.com/photo-1465101178521-c1a9136a3b43' },
-    category: 'Politics',
-    headline: 'Election results spark nationwide debate',
-    source: 'Reuters',
-    time: '50m ago',
-  },
-  {
-    image: { uri: 'https://images.unsplash.com/photo-1465101178521-c1a9136a3b43' },
-    category: 'Lifestyle',
-    headline: 'Minimalism: The new trend in urban living',
-    source: 'Vogue',
-    time: '2h ago',
-  },
-  {
-    image: { uri: 'https://images.unsplash.com/photo-1519125323398-675f0ddb6308' },
-    category: 'Technology',
-    headline: 'AI breakthroughs in 2024',
-    source: 'TechCrunch',
-    time: '10m ago',
-  },
-  {
-    image: { uri: 'https://images.unsplash.com/photo-1519985176271-adb1088fa94c' },
-    category: 'Art',
-    headline: 'Modern art exhibition opens in Paris',
-    source: 'ArtDaily',
-    time: '5m ago',
-  },
-];
 
 const categories = [
   'All',
@@ -125,33 +36,110 @@ const categories = [
   'Art',
 ];
 
+// Utility to format published time as 'Xh ago' or 'Xm ago'
+function formatTimeAgo(dateString: string): string {
+  const published = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - published.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 60) {
+    return `${diffMins}m ago`;
+  } else {
+    const diffHours = Math.floor(diffMins / 60);
+    return `${diffHours}h ago`;
+  }
+}
+
+// Helper to save viewed news
+const saveViewedNews = async (article: any) => {
+  try {
+    const userStr = await AsyncStorage.getItem('user');
+    const email = userStr ? JSON.parse(userStr).email : null;
+    if (!email) return;
+    await fetch('http://localhost:8080/viewed-news/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: email, article })
+    });
+  } catch {}
+};
+
 export default function HomeScreen() {
   useAuthGuard();
-  useEffect(() => {
-    (async () => {
-      const user = await AsyncStorage.getItem('user');
-      console.log('AsyncStorage user:', user);
-    })();
-  }, []);
+  const [trendingNews, setTrendingNews] = useState<any[]>([]);
+  const [latestNews, setLatestNews] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const searchTimeout = useRef<number | null>(null);
   const insets = useSafeAreaInsets();
   const router = useRouter();
+
+  // Helper to get backend category param
+  const getBackendCategory = (cat: string) => {
+    if (cat === 'All') return '';
+    return cat.toLowerCase();
+  };
+
+  // Fetch news with optional search and category
+  const fetchNews = async (opts?: { q?: string; category?: string }) => {
+    setLoading(true);
+    setError(null);
+    try {
+      let url = 'http://localhost:8080/news?';
+      if (opts?.q) url += `q=${encodeURIComponent(opts.q)}&`;
+      if (opts?.category && opts.category !== 'All') url += `category=${encodeURIComponent(getBackendCategory(opts.category))}&`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch news');
+      const data = await res.json();
+      setTrendingNews(data.trending || []);
+      setLatestNews(data.latest || []);
+    } catch (err: any) {
+      setError(err.message || 'Error fetching news');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initial fetch
+  useEffect(() => {
+    fetchNews();
+  }, []);
+
+  // Handle search input with debounce
+  useEffect(() => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      fetchNews({ q: search, category: selectedCategory });
+    }, 400);
+    return () => {
+      if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    };
+  }, [search]);
+
+  // Handle category change
+  useEffect(() => {
+    fetchNews({ q: search, category: selectedCategory });
+  }, [selectedCategory]);
 
   // FlatList data is just the news items
   const flatListData = latestNews;
 
   // Render each news item
-  const renderItem = ({ item }: { item: typeof latestNews[0] }) => (
-    <TouchableOpacity style={styles.latestCard} activeOpacity={0.9} onPress={() => router.push('/news-page')}>
-      <Image source={item.image} style={styles.latestImage} resizeMode="cover" />
+  const renderItem = ({ item }: { item: any }) => (
+    <TouchableOpacity style={styles.latestCard} activeOpacity={0.9} onPress={async () => {
+      await saveViewedNews(item);
+      router.push({ pathname: '/news-page', params: { article: JSON.stringify(item) } });
+    }}>
+      <Image source={{ uri: item.image }} style={styles.latestImage} resizeMode="cover" />
       <View style={{ flex: 1, marginLeft: 12 }}>
-        <ThemedText style={styles.newsCategory}>{item.category}</ThemedText>
-        <ThemedText style={styles.latestHeadline} numberOfLines={2}>{item.headline}</ThemedText>
+        <ThemedText style={styles.newsCategory}>{item.country}</ThemedText>
+        <ThemedText style={styles.latestHeadline} numberOfLines={2}>{item.title}</ThemedText>
         <View style={styles.newsMetaRow}>
           <Image source={require('@/assets/images/favicon.png')} style={styles.sourceIcon} />
-          <ThemedText style={styles.newsSource}>{item.source}</ThemedText>
-          <ThemedText style={styles.newsTime}>{item.time}</ThemedText>
+          <ThemedText style={styles.newsSource}>{item.newsCompany}</ThemedText>
+          <ThemedText style={styles.newsTime}>{item.publishedAgo}</ThemedText>
           <TouchableOpacity style={{ marginLeft: 'auto' }}>
             <MaterialIcons name="more-horiz" size={20} color="#888" />
           </TouchableOpacity>
@@ -160,12 +148,27 @@ export default function HomeScreen() {
     </TouchableOpacity>
   );
 
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { justifyContent: 'center', alignItems: 'center' }]}> 
+        <ActivityIndicator size="large" color="#2979FF" />
+      </SafeAreaView>
+    );
+  }
+  if (error) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { justifyContent: 'center', alignItems: 'center' }]}> 
+        <ThemedText style={{ color: 'red' }}>{error}</ThemedText>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <>
       <StatusBar style="light" />
       <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top }]}> 
         <FlatList
-          data={flatListData}
+          data={latestNews}
           renderItem={renderItem}
           keyExtractor={(_, idx) => idx.toString()}
           ListHeaderComponent={
@@ -209,15 +212,18 @@ export default function HomeScreen() {
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.trendingScroll} contentContainerStyle={{ paddingLeft: 18, paddingRight: 4 }}>
                 {trendingNews.map((item, idx) => (
-                  <TouchableOpacity key={idx} style={styles.trendingCard} activeOpacity={0.9}>
-                    <Image source={item.image} style={styles.trendingImage} resizeMode="cover" />
+                  <TouchableOpacity key={idx} style={styles.trendingCard} activeOpacity={0.9} onPress={async () => {
+                    await saveViewedNews(item);
+                    router.push({ pathname: '/news-page', params: { article: JSON.stringify(item) } });
+                  }}>
+                    <Image source={{ uri: item.image }} style={styles.trendingImage} resizeMode="cover" />
                     <View style={{ padding: 14 }}>
-                      <ThemedText style={styles.newsCategory}>{item.category}</ThemedText>
-                      <ThemedText style={styles.newsHeadline} numberOfLines={2}>{item.headline}</ThemedText>
+                      <ThemedText style={styles.newsCategory}>{item.country}</ThemedText>
+                      <ThemedText style={styles.newsHeadline} numberOfLines={2}>{item.title}</ThemedText>
                       <View style={styles.newsMetaRow}>
                         <Image source={require('@/assets/images/favicon.png')} style={styles.sourceIcon} />
-                        <ThemedText style={styles.newsSource}>{item.source}</ThemedText>
-                        <ThemedText style={styles.newsTime}>{item.time}</ThemedText>
+                        <ThemedText style={styles.newsSource}>{item.newsCompany}</ThemedText>
+                        <ThemedText style={styles.newsTime}>{item.publishedAgo}</ThemedText>
                         <TouchableOpacity style={{ marginLeft: 'auto' }}>
                           <MaterialIcons name="more-horiz" size={20} color="#888" />
                         </TouchableOpacity>
@@ -229,7 +235,7 @@ export default function HomeScreen() {
               {/* Latest Section */}
               <View style={styles.latestSectionHeaderRow}>
                 <ThemedText style={styles.sectionTitle} type="subtitle">Latest</ThemedText>
-                <TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push('./latest-news')}>
                   <ThemedText style={styles.seeAll}>See all</ThemedText>
                 </TouchableOpacity>
               </View>

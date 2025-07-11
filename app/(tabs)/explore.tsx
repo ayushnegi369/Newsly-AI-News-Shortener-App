@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,119 +7,103 @@ import {
   Image,
   SafeAreaView,
   ScrollView,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/ThemedText';
 import { useRouter } from 'expo-router';
 import useAuthGuard from '../hooks/useAuthGuard';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const topicsData = [
-  {
-    id: '1',
-    image: { uri: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb' },
-    title: 'Health',
-    description: 'Get energizing workout moves, healthy recipes...',
-    saved: false,
-  },
-  {
-    id: '2',
-    image: { uri: 'https://images.unsplash.com/photo-1519125323398-675f0ddb6308' },
-    title: 'Technology',
-    description: 'The application of scientific knowledge to the practi...',
-    saved: true,
-  },
-  {
-    id: '3',
-    image: { uri: 'https://images.unsplash.com/photo-1465101046530-73398c7f28ca' },
-    title: 'Art',
-    description: 'Art is a diverse range of human activity, and result...',
-    saved: true,
-  },
-];
+const API_BASE = 'http://localhost:8080';
 
-const popularTopics = [
-  {
-    image: { uri: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb' },
-    category: 'Europe',
-    headline: 'Russian warship: Moskva sinks in Black Sea',
-    source: 'BBC News',
-    time: '4h ago',
-    sourceLogo: { uri: 'https://upload.wikimedia.org/wikipedia/commons/b/bc/BBC_News_2022_%28Alt%29.svg' },
-  },
-  {
-    image: { uri: 'https://images.unsplash.com/photo-1519125323398-675f0ddb6308' },
-    category: 'Health',
-    headline: 'Get energizing workout moves, healthy recipes...',
-    source: 'CNN',
-    time: '2h ago',
-    sourceLogo: { uri: 'https://upload.wikimedia.org/wikipedia/commons/6/6e/CNN_International_logo.svg' },
-  },
-  {
-    image: { uri: 'https://images.unsplash.com/photo-1465101046530-73398c7f28ca' },
-    category: 'Technology',
-    headline: 'The application of scientific knowledge to the practi...',
-    source: 'USA Today',
-    time: '1h ago',
-    sourceLogo: { uri: 'https://upload.wikimedia.org/wikipedia/commons/0/09/USA_Today_logo.svg' },
-  },
-];
+const saveViewedNews = async (article: any) => {
+  try {
+    const userStr = await AsyncStorage.getItem('user');
+    const email = userStr ? JSON.parse(userStr).email : null;
+    if (!email) return;
+    await fetch('http://localhost:8080/viewed-news/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: email, article })
+    });
+  } catch {}
+};
 
 export default function Explore() {
   useAuthGuard();
-  const [topics, setTopics] = useState(topicsData);
+  const [news, setNews] = useState<any[]>([]);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  const toggleSave = (id: string) => {
-    setTopics(prev => prev.map(t => t.id === id ? { ...t, saved: !t.saved } : t));
-  };
+  // Fetch all news
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${API_BASE}/news`)
+      .then(res => res.json())
+      .then(data => setNews([...(data.trending || []), ...(data.latest || [])]))
+      .catch(() => setError('Failed to load news'))
+      .finally(() => setLoading(false));
+  }, []);
 
-  const renderTopic = ({ item }: { item: typeof topicsData[0] }) => (
-    <View style={styles.topicRow} key={item.id}>
-      <Image source={item.image} style={styles.topicImage} />
-      <View style={{ flex: 1, marginLeft: 12 }}>
-        <Text style={styles.topicTitle}>{item.title}</Text>
-        <Text style={styles.topicDesc} numberOfLines={1}>{item.description}</Text>
+  // Search news
+  useEffect(() => {
+    if (!search) {
+      setLoading(true);
+      fetch(`${API_BASE}/news`)
+        .then(res => res.json())
+        .then(data => setNews([...(data.trending || []), ...(data.latest || [])]))
+        .catch(() => setError('Failed to load news'))
+        .finally(() => setLoading(false));
+      return;
+    }
+    setLoading(true);
+    fetch(`${API_BASE}/news?q=${encodeURIComponent(search)}`)
+      .then(res => res.json())
+      .then(data => setNews([...(data.trending || []), ...(data.latest || [])]))
+      .catch(() => setError('Failed to search news'))
+      .finally(() => setLoading(false));
+  }, [search]);
+
+  const renderNewsCard = (item: any, idx: number) => (
+    <TouchableOpacity key={item._id || idx} style={styles.popularCard} activeOpacity={0.9} onPress={async () => {
+      await saveViewedNews(item);
+      router.push({ pathname: '/news-page', params: { article: JSON.stringify(item) } });
+    }}>
+      <Image source={{ uri: item.image || item.urlToImage || '' }} style={styles.popularImage} />
+      <View style={{ padding: 14 }}>
+        <Text style={styles.popularCategory}>{item.category || item.country}</Text>
+        <Text style={styles.popularHeadline}>{item.title || item.headline}</Text>
+        <View style={styles.popularMetaRow}>
+          <Text style={styles.popularSource}>{item.source || item.newsCompany}</Text>
+          <Text style={styles.popularTime}>{item.time || item.publishedAgo}</Text>
+          <TouchableOpacity style={{ marginLeft: 'auto' }}>
+            <Ionicons name="ellipsis-horizontal" size={18} color="#888" />
+          </TouchableOpacity>
+        </View>
       </View>
-      <TouchableOpacity
-        style={[styles.saveBtn, item.saved && styles.saveBtnActive]}
-        onPress={() => toggleSave(item.id)}
-      >
-        <Text style={[styles.saveBtnText, item.saved && styles.saveBtnTextActive]}>
-          {item.saved ? 'Saved' : 'Save'}
-        </Text>
       </TouchableOpacity>
-    </View>
   );
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Text style={styles.heading}>Explore</Text>
-        <View style={styles.sectionRow}>
-          <Text style={[styles.sectionTitle, { marginLeft: 0 }]}>Topic</Text>
-          <TouchableOpacity>
-            <Text style={styles.seeAll}>See all</Text>
-          </TouchableOpacity>
+        {/* Search Bar */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 12 }}>
+          <TextInput
+            style={{ flex: 1, backgroundColor: '#23252B', color: '#fff', borderRadius: 8, paddingHorizontal: 12, height: 40 }}
+            placeholder="Search news..."
+            placeholderTextColor="#888"
+            value={search}
+            onChangeText={setSearch}
+          />
         </View>
-        {topics.map(topic => renderTopic({ item: topic }))}
-        <Text style={styles.sectionTitle}>Popular Topic</Text>
-        {popularTopics.map((item, idx) => (
-          <View style={[styles.popularCard, idx === 0 && { marginTop: 16 }]} key={idx}>
-            <Image source={item.image} style={styles.popularImage} />
-            <View style={{ padding: 14 }}>
-              <Text style={styles.popularCategory}>{item.category}</Text>
-              <Text style={styles.popularHeadline}>{item.headline}</Text>
-              <View style={styles.popularMetaRow}>
-                <Image source={item.sourceLogo} style={styles.sourceLogo} />
-                <Text style={styles.popularSource}>{item.source}</Text>
-                <Text style={styles.popularTime}>{item.time}</Text>
-                <TouchableOpacity style={{ marginLeft: 'auto' }}>
-                  <Ionicons name="ellipsis-horizontal" size={18} color="#888" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        ))}
+        {loading && <Text style={{ color: '#fff', textAlign: 'center' }}>Loading...</Text>}
+        {error && <Text style={{ color: 'red', textAlign: 'center' }}>{error}</Text>}
+        {news.length === 0 && !loading ? <Text style={{ color: '#fff', textAlign: 'center' }}>No news found.</Text> : news.map(renderNewsCard)}
       </ScrollView>
     </SafeAreaView>
   );

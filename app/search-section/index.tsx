@@ -10,11 +10,13 @@ import {
   ScrollView,
   Keyboard,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/ThemedText';
 import { useRouter } from 'expo-router';
 import useAuthGuard from '../hooks/useAuthGuard';
+import { useEffect } from 'react';
 
 const TABS = ['News', 'Topics', 'Author'];
 
@@ -140,26 +142,69 @@ export default function SearchSection() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('News');
   const [search, setSearch] = useState('');
+  const [newsResults, setNewsResults] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<TextInput>(null);
+  const searchTimeout = useRef<number | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
+  // Debounced search effect
+  useEffect(() => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      fetchNews();
+    }, 400);
+    return () => {
+      if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, activeTab]);
+
+  const fetchNews = () => {
+    if (activeTab === 'News' || activeTab === 'Author' || activeTab === 'Topics') {
+      setLoading(true);
+      setError(null);
+      let url = 'http://localhost:8080/news?';
+      if (search) url += `q=${encodeURIComponent(search)}&`;
+      if (activeTab === 'Topics' && search) url += `category=${encodeURIComponent(search.toLowerCase())}&`;
+      fetch(url)
+        .then(res => {
+          if (!res.ok) throw new Error('Failed to fetch news');
+          return res.json();
+        })
+        .then(data => {
+          let allNews = [...(data.trending || []), ...(data.latest || [])];
+          if (activeTab === 'Author' && search) {
+            allNews = allNews.filter(n => n.newsCompany && n.newsCompany.toLowerCase().includes(search.toLowerCase()));
+          }
+          if (activeTab === 'Topics' && search) {
+            allNews = allNews.filter(n => n.country && n.country.toLowerCase().includes(search.toLowerCase()));
+          }
+          setNewsResults(allNews);
+        })
+        .catch(err => setError(err.message || 'Error fetching news'))
+        .finally(() => setLoading(false));
+    }
+  };
+
   const renderNews = () => (
     <FlatList
-      data={newsData}
+      data={newsResults}
       keyExtractor={(_, idx) => idx.toString()}
       renderItem={({ item }) => (
         <View style={styles.newsCard}>
-          <Image source={item.image} style={styles.newsImage} />
+          <Image source={{ uri: item.image }} style={styles.newsImage} />
           <View style={{ flex: 1, marginLeft: 10 }}>
-            <ThemedText style={styles.newsCategory}>{item.category}</ThemedText>
-            <ThemedText style={styles.newsHeadline} numberOfLines={2}>{item.headline}</ThemedText>
+            <ThemedText style={styles.newsCategory}>{item.country}</ThemedText>
+            <ThemedText style={styles.newsHeadline} numberOfLines={2}>{item.title}</ThemedText>
             <View style={styles.newsMetaRow}>
-              <Image source={item.sourceLogo} style={styles.sourceLogo} />
-              <ThemedText style={styles.newsSource}>{item.source}</ThemedText>
-              <ThemedText style={styles.newsTime}>{item.time}</ThemedText>
+              <Image source={require('@/assets/images/favicon.png')} style={styles.sourceLogo} />
+              <ThemedText style={styles.newsSource}>{item.newsCompany}</ThemedText>
+              <ThemedText style={styles.newsTime}>{item.publishedAgo}</ThemedText>
               <TouchableOpacity style={{ marginLeft: 'auto' }}>
                 <Ionicons name="ellipsis-horizontal" size={18} color="#888" />
               </TouchableOpacity>
@@ -169,6 +214,7 @@ export default function SearchSection() {
       )}
       showsVerticalScrollIndicator={false}
       style={{ marginTop: 12 }}
+      ListEmptyComponent={loading ? null : <Text style={{ color: '#fff', textAlign: 'center', marginTop: 24 }}>No results found.</Text>}
     />
   );
 
@@ -216,41 +262,44 @@ export default function SearchSection() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Search Bar */}
-      <View style={styles.searchBarRow}>
-        <Ionicons name="search" size={22} color="#888" style={{ marginLeft: 8, marginRight: 8 }} />
-        <TextInput
-          ref={inputRef}
-          style={styles.searchInput}
-          placeholder="Search..."
-          placeholderTextColor="#888"
-          value={search}
-          onChangeText={setSearch}
-          returnKeyType="search"
-          onSubmitEditing={Keyboard.dismiss}
-        />
-        <TouchableOpacity onPress={() => setSearch('')} style={{ marginRight: 8 }}>
-          <Ionicons name="close" size={22} color="#888" />
+      <View style={styles.headerRow}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
+        <View style={styles.searchBar}>
+          <Ionicons name="search" size={20} color="#888" style={{ marginRight: 8 }} />
+          <TextInput
+            ref={inputRef}
+            style={styles.searchInput}
+            placeholder="Search news, topics, authors..."
+            placeholderTextColor="#888"
+            value={search}
+            onChangeText={setSearch}
+            returnKeyType="search"
+            autoFocus
+          />
+        </View>
       </View>
       {/* Tabs */}
       <View style={styles.tabsRow}>
-        {TABS.map((tab, idx) => (
+        {TABS.map(tab => (
           <TouchableOpacity
             key={tab}
-            style={[styles.tabBtn, idx === TABS.length - 1 && { marginRight: 0 }]}
+            style={[styles.tabBtn, activeTab === tab && styles.tabBtnActive]}
             onPress={() => setActiveTab(tab)}
-            activeOpacity={0.7}
           >
             <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
-            {activeTab === tab && <View style={styles.tabUnderline} />}
           </TouchableOpacity>
         ))}
       </View>
-      {/* Tab Content */}
-      {activeTab === 'News' && renderNews()}
-      {activeTab === 'Topics' && renderTopics()}
-      {activeTab === 'Author' && renderAuthors()}
+      {/* Results */}
+      {loading ? (
+        <ActivityIndicator size="large" color="#2979FF" style={{ marginTop: 32 }} />
+      ) : error ? (
+        <Text style={{ color: 'red', textAlign: 'center', marginTop: 24 }}>{error}</Text>
+      ) : activeTab === 'News' || activeTab === 'Author' || activeTab === 'Topics' ? (
+        renderNews()
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -261,12 +310,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#181A20',
     paddingTop: 32,
   },
-  searchBarRow: {
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+  },
+  searchBar: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#23252B',
     borderRadius: 10,
-    marginHorizontal: 12,
     height: 48,
   },
   searchInput: {
@@ -287,6 +342,10 @@ const styles = StyleSheet.create({
     marginRight: 32,
     alignItems: 'center',
     paddingBottom: 6,
+  },
+  tabBtnActive: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#2563eb',
   },
   tabText: {
     color: '#B0B3B8',

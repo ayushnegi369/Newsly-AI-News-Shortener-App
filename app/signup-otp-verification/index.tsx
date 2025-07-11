@@ -72,8 +72,12 @@ export default function SignupOTPVerification() {
         showModal(data.message);
         setTimeout(async () => {
           setModalVisible(false);
-          await AsyncStorage.setItem('user', JSON.stringify({ email: data.email, username: data.username, token: data.token, firstTimeLogin: true }));
-          router.push('/choose-topic');
+          const userObj = { email: data.email, username: data.username, token: data.token, firstTimeLogin: true };
+          await AsyncStorage.setItem('user', JSON.stringify(userObj));
+          // Debug log
+          const storedUser = await AsyncStorage.getItem('user');
+          console.log('User after OTP verification:', storedUser);
+          router.push('/select-country');
         }, 1200);
       } else {
         setError(true);

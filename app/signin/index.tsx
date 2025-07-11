@@ -54,7 +54,7 @@ export default function SignIn() {
             } catch {}
           }
           await AsyncStorage.setItem('user', JSON.stringify(user));
-          if (user.firstTimeLogin) router.push('/choose-topic');
+          if (user.firstTimeLogin) router.push('/select-country');
           else router.push('/(tabs)');
         }, 1200);
         setEmail('');
@@ -115,7 +115,7 @@ export default function SignIn() {
                   } catch {}
                 }
                 await AsyncStorage.setItem('user', JSON.stringify(user));
-                if (user.firstTimeLogin) router.push('/choose-topic');
+                if (user.firstTimeLogin) router.push('/select-country');
                 else router.push('/(tabs)');
               }, 1200);
               setEmail('');

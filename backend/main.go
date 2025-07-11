@@ -37,6 +37,26 @@ func main() {
 	http.HandleFunc("/get-user-details", handlers.GetUserDetailsHandler)
 	http.HandleFunc("/update-user-details", handlers.PostUpdateUserDetailsHandler)
 
+	// News endpoint
+	http.HandleFunc("/news", handlers.GetNewsHandler)
+	http.HandleFunc("/news/article", handlers.GetNewsArticleByURLHandler)
+	http.HandleFunc("/news/summary", handlers.PostNewsSummaryHandler)
+
+	// Explore endpoints
+	http.HandleFunc("/explore/topics", handlers.GetExploreTopicsHandler)
+	http.HandleFunc("/explore/news", handlers.GetExploreNewsByTopicHandler)
+	http.HandleFunc("/explore/trending", handlers.GetExploreTrendingHandler)
+	http.HandleFunc("/explore/search", handlers.GetExploreSearchHandler)
+
+	// Bookmark endpoints
+	http.HandleFunc("/bookmarks/add", handlers.PostAddBookmarkHandler)
+	http.HandleFunc("/bookmarks/remove", handlers.PostRemoveBookmarkHandler)
+	http.HandleFunc("/bookmarks/list", handlers.GetBookmarksListHandler)
+
+	// Viewed news endpoints
+	http.HandleFunc("/viewed-news/add", handlers.PostViewedNewsHandler)
+	http.HandleFunc("/viewed-news/list", handlers.GetViewedNewsListHandler)
+
 	fmt.Println("Server starting on port 8080...")
 	err := http.ListenAndServe(":8080", nil)
 	if err != nil {

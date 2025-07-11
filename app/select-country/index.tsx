@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { COUNTRIES } from '../../constants/countries';
 import CountryFlag from 'react-native-country-flag';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function SelectCountry() {
   const [search, setSearch] = useState('');
@@ -14,6 +15,24 @@ export default function SelectCountry() {
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     c.code.includes(search)
   );
+
+  const handleNext = async () => {
+    if (!selected) return;
+    try {
+      const userStr = await AsyncStorage.getItem('user');
+      const user = userStr ? JSON.parse(userStr) : null;
+      if (user && user.email) {
+        await fetch('http://localhost:8080/update-user-details', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: user.email, country: selected }),
+        });
+      }
+    } catch (err) {
+      // Optionally handle error
+    }
+    router.push('/choose-topic');
+  };
 
   return (
     <View style={styles.container}>
@@ -65,7 +84,7 @@ export default function SelectCountry() {
       <TouchableOpacity
         style={[styles.nextButton, { opacity: selected ? 1 : 0.5 }]}
         disabled={!selected}
-        onPress={() => router.push('/choose-topic')}
+        onPress={handleNext}
       >
         <Text style={styles.nextButtonText}>Next</Text>
       </TouchableOpacity>

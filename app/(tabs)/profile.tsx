@@ -67,6 +67,9 @@ export default function Profile() {
   const [avatar, setAvatar] = useState('');
   const [bio, setBio] = useState('');
   const router = useRouter();
+  const [recentNews, setRecentNews] = useState<any[]>([]);
+  const [recentLoading, setRecentLoading] = useState(false);
+  const [recentError, setRecentError] = useState<string | null>(null);
 
   React.useEffect(() => {
     const fetchUserProfile = async () => {
@@ -91,6 +94,32 @@ export default function Profile() {
     fetchUserProfile();
   }, []);
 
+  // Fetch recent news when Recent tab is active
+  React.useEffect(() => {
+    const fetchRecent = async () => {
+      setRecentLoading(true);
+      setRecentError(null);
+      try {
+        const userStr = await AsyncStorage.getItem('user');
+        const email = userStr ? JSON.parse(userStr).email : null;
+        if (!email) throw new Error('User not found');
+        const res = await fetch(`http://localhost:8080/viewed-news/list?user=${encodeURIComponent(email)}`);
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(errText || 'Failed to fetch recent news');
+        }
+        const data = await res.json();
+        setRecentNews(data.viewed || []);
+      } catch (e: any) {
+        setRecentError(e.message || 'Failed to fetch recent news');
+        setRecentNews([]);
+      } finally {
+        setRecentLoading(false);
+      }
+    };
+    if (activeTab === 'Recent') fetchRecent();
+  }, [activeTab]);
+
   const renderNews = ({ item }: { item: typeof newsData[0] }) => (
     <View style={styles.newsCard}>
       <Image source={{ uri: item.image }} style={styles.newsImage} />
@@ -107,6 +136,24 @@ export default function Profile() {
         </View>
       </View>
     </View>
+  );
+
+  const renderRecentNews = ({ item }: { item: any }) => (
+    <TouchableOpacity style={styles.newsCard} activeOpacity={0.9} onPress={() => router.push({ pathname: '/news-page', params: { article: JSON.stringify(item) } })}>
+      <Image source={{ uri: item.image || item.urlToImage || '' }} style={styles.newsImage} />
+      <View style={{ flex: 1, marginLeft: 10 }}>
+        <Text style={styles.newsCategory}>{item.category || item.country}</Text>
+        <Text style={styles.newsTitle} numberOfLines={2}>{item.title}</Text>
+        <View style={styles.newsMetaRow}>
+          <Text style={styles.newsAuthor}>{item.newsCompany || item.source || item.author}</Text>
+          <Ionicons name="time-outline" size={14} color="#B0B3B8" style={{ marginLeft: 8, marginRight: 2 }} />
+          <Text style={styles.newsTime}>{item.publishedAgo || item.time || item.publishedAt}</Text>
+          <TouchableOpacity style={{ marginLeft: 'auto' }}>
+            <Ionicons name="ellipsis-horizontal" size={18} color="#888" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </TouchableOpacity>
   );
 
   return (
@@ -157,13 +204,24 @@ export default function Profile() {
         </TouchableOpacity>
       </View>
       {/* News List */}
-      <FlatList
-        data={newsData}
-        keyExtractor={item => item.id}
-        renderItem={renderNews}
-        showsVerticalScrollIndicator={false}
-        style={{ marginTop: 8 }}
-      />
+      {activeTab === 'News' ? (
+        <FlatList
+          data={newsData}
+          keyExtractor={item => item.id}
+          renderItem={renderNews}
+          showsVerticalScrollIndicator={false}
+          style={{ marginTop: 8 }}
+        />
+      ) : (
+        <FlatList
+          data={recentNews}
+          keyExtractor={(_, idx) => idx.toString()}
+          renderItem={renderRecentNews}
+          showsVerticalScrollIndicator={false}
+          style={{ marginTop: 8 }}
+          ListEmptyComponent={recentLoading ? <Text style={{ color: '#fff', textAlign: 'center', marginTop: 24 }}>Loading...</Text> : recentError ? <Text style={{ color: 'red', textAlign: 'center', marginTop: 24 }}>{recentError}</Text> : <Text style={{ color: '#fff', textAlign: 'center', marginTop: 24 }}>No recent news found.</Text>}
+        />
+      )}
       {/* Floating Action Button */}
       <TouchableOpacity style={styles.fab} onPress={() => router.push('/add-news')}>
         <Ionicons name="add" size={32} color="#fff" />

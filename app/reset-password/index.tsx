@@ -52,23 +52,23 @@ export default function ResetPassword() {
         <Text style={styles.header}>Reset Password</Text>
         <Text style={styles.subtitle}>Enter your new password for {email}</Text>
         <Text style={styles.label}>New Password</Text>
-        <TextInput
+            <TextInput
           style={styles.input}
-          placeholder="Enter new password"
-          placeholderTextColor="#888"
+              placeholder="Enter new password"
+              placeholderTextColor="#888"
           value={password}
           onChangeText={setPassword}
           secureTextEntry
         />
         <Text style={styles.label}>Confirm New Password</Text>
-        <TextInput
+            <TextInput
           style={styles.input}
-          placeholder="Confirm new password"
-          placeholderTextColor="#888"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
+              placeholder="Confirm new password"
+              placeholderTextColor="#888"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
           secureTextEntry
-        />
+            />
         <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
           <Text style={styles.resetButtonText}>Reset Password</Text>
         </TouchableOpacity>

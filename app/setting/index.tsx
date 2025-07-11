@@ -19,7 +19,7 @@ export default function Setting() {
   const router = useRouter();
 
   const handleLogout = async () => {
-    await AsyncStorage.removeItem('user');
+    await AsyncStorage.clear();
     setModalVisible(false);
     router.replace('/signin');
   };

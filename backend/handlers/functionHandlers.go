@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"backend/db"
@@ -16,6 +19,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
 	gopkgmail "gopkg.in/gomail.v2"
 )
@@ -684,14 +688,17 @@ func PostUpdateUserDetailsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var data struct {
-		Email    string `json:"email"`
-		Username string `json:"username"`
-		Password string `json:"password"`
-		FullName string `json:"fullName"`
-		Phone    string `json:"phone"`
-		Bio      string `json:"bio"`
-		Website  string `json:"website"`
-		Avatar   string `json:"avatar"`
+		Email       string   `json:"email"`
+		Username    string   `json:"username"`
+		Password    string   `json:"password"`
+		FullName    string   `json:"fullName"`
+		Phone       string   `json:"phone"`
+		Bio         string   `json:"bio"`
+		Website     string   `json:"website"`
+		Avatar      string   `json:"avatar"`
+		Country     string   `json:"country"`
+		Categories  []string `json:"categories"`
+		NewsSources []string `json:"newsSources"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
@@ -732,6 +739,15 @@ func PostUpdateUserDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	if data.Avatar != "" {
 		update["$set"].(bson.M)["avatar"] = data.Avatar
 	}
+	if data.Country != "" {
+		update["$set"].(bson.M)["country"] = data.Country
+	}
+	if data.Categories != nil && len(data.Categories) > 0 {
+		update["$set"].(bson.M)["categories"] = data.Categories
+	}
+	if data.NewsSources != nil && len(data.NewsSources) > 0 {
+		update["$set"].(bson.M)["newsSources"] = data.NewsSources
+	}
 	res1, err1 := usersCol.UpdateOne(ctx, bson.M{"email": data.Email}, update)
 	res2, err2 := googleCol.UpdateOne(ctx, bson.M{"email": data.Email}, update)
 	if (err1 != nil || res1.MatchedCount == 0) && (err2 != nil || res2.MatchedCount == 0) {
@@ -740,4 +756,595 @@ func PostUpdateUserDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "User details updated successfully"})
+}
+
+// Helper to fetch everything articles from NewsAPI
+func fetchEverythingFromNewsAPI(apiKey, q, sources, domains, from, to, language, sortBy string, page int) ([]map[string]interface{}, error) {
+	url := fmt.Sprintf("https://newsapi.org/v2/everything?q=%s&sources=%s&domains=%s&from=%s&to=%s&language=%s&sortBy=%s&page=%d&apiKey=%s",
+		q, sources, domains, from, to, language, sortBy, page, apiKey)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Failed to fetch everything from NewsAPI: %s", resp.Status)
+	}
+	var apiResp struct {
+		Status       string                   `json:"status"`
+		TotalResults int                      `json:"totalResults"`
+		Articles     []map[string]interface{} `json:"articles"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+	return apiResp.Articles, nil
+}
+
+// Handler to fetch news from NewsAPI and return trending and latest news
+func GetNewsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	apiKey := os.Getenv("NEWS_API_KEY")
+	if apiKey == "" {
+		http.Error(w, "News API key not set", http.StatusInternalServerError)
+		return
+	}
+
+	typeParam := r.URL.Query().Get("type")
+	if typeParam == "everything" {
+		// Fetch from /v2/everything
+		q := r.URL.Query().Get("q")
+		sources := r.URL.Query().Get("sources")
+		domains := r.URL.Query().Get("domains")
+		from := r.URL.Query().Get("from")
+		to := r.URL.Query().Get("to")
+		language := r.URL.Query().Get("language")
+		sortBy := r.URL.Query().Get("sortBy")
+		page := 1
+		if p := r.URL.Query().Get("page"); p != "" {
+			fmt.Sscanf(p, "%d", &page)
+		}
+		articles, err := fetchEverythingFromNewsAPI(apiKey, q, sources, domains, from, to, language, sortBy, page)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"articles": articles,
+		})
+		return
+	}
+
+	country := r.URL.Query().Get("country")
+	if country == "" {
+		country = "us"
+	}
+	category := r.URL.Query().Get("category")
+	if category == "" {
+		category = "sports"
+	}
+	searchQ := r.URL.Query().Get("q")
+
+	url := fmt.Sprintf("https://newsapi.org/v2/top-headlines?country=%s&category=%s&apiKey=%s", country, category, apiKey)
+	resp, err := http.Get(url)
+	if err != nil {
+		http.Error(w, "Failed to fetch news", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, "Failed to fetch news from NewsAPI", http.StatusInternalServerError)
+		return
+	}
+
+	var apiResp struct {
+		Status       string `json:"status"`
+		TotalResults int    `json:"totalResults"`
+		Articles     []struct {
+			Source struct {
+				Name string `json:"name"`
+			} `json:"source"`
+			Author      string `json:"author"`
+			Title       string `json:"title"`
+			Description string `json:"description"`
+			Url         string `json:"url"`
+			UrlToImage  string `json:"urlToImage"`
+			PublishedAt string `json:"publishedAt"`
+			Content     string `json:"content"`
+		} `json:"articles"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		http.Error(w, "Failed to decode news response", http.StatusInternalServerError)
+		return
+	}
+
+	type NewsItem struct {
+		Image        string `json:"image"`
+		Country      string `json:"country"`
+		Title        string `json:"title"`
+		NewsCompany  string `json:"newsCompany"`
+		PublishedAgo string `json:"publishedAgo"`
+	}
+
+	var filtered []NewsItem
+	now := time.Now().UTC()
+	for _, article := range apiResp.Articles {
+		if article.Title == "" || article.UrlToImage == "" {
+			continue // skip articles without title or image
+		}
+		if searchQ != "" && !strings.Contains(strings.ToLower(article.Title), strings.ToLower(searchQ)) {
+			continue // filter by search query
+		}
+		publishedAt, err := time.Parse(time.RFC3339, article.PublishedAt)
+		if err != nil {
+			publishedAt = now
+		}
+		delta := now.Sub(publishedAt)
+		var publishedAgo string
+		if delta.Hours() >= 1 {
+			publishedAgo = fmt.Sprintf("%dh ago", int(delta.Hours()))
+		} else {
+			publishedAgo = fmt.Sprintf("%dm ago", int(delta.Minutes()))
+		}
+		item := NewsItem{
+			Image:        article.UrlToImage,
+			Country:      country,
+			Title:        article.Title,
+			NewsCompany:  article.Source.Name,
+			PublishedAgo: publishedAgo,
+		}
+		filtered = append(filtered, item)
+	}
+
+	var trending []NewsItem
+	var latest []NewsItem
+	for i, item := range filtered {
+		if i < 5 {
+			trending = append(trending, item)
+		} else {
+			latest = append(latest, item)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"trending": trending,
+		"latest":   latest,
+	})
+}
+
+// Handler to fetch a single news article by URL
+func GetNewsArticleByURLHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+	apiKey := os.Getenv("NEWS_API_KEY")
+	if apiKey == "" {
+		http.Error(w, "News API key not set", http.StatusInternalServerError)
+		return
+	}
+	urlParam := r.URL.Query().Get("url")
+	if urlParam == "" {
+		http.Error(w, "URL is required", http.StatusBadRequest)
+		return
+	}
+	fmt.Println("[DEBUG] /news/article called with url:", urlParam)
+	parsed, err := url.Parse(urlParam)
+	if err != nil {
+		http.Error(w, "Invalid URL", http.StatusBadRequest)
+		return
+	}
+	domain := parsed.Hostname()
+	segments := parsed.Path
+	q := ""
+	if segments != "" {
+		parts := strings.Split(segments, "/")
+		if len(parts) > 0 {
+			q = parts[len(parts)-1]
+		}
+	}
+	fmt.Printf("[DEBUG] NewsAPI everything search: domain=%s, q=%s\n", domain, q)
+	articles, err := fetchEverythingFromNewsAPI(apiKey, q, "", domain, "", "", "en", "publishedAt", 1)
+	if err != nil {
+		fmt.Println("[ERROR] NewsAPI fetch error:", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, article := range articles {
+		if article["url"] == urlParam {
+			fmt.Println("[DEBUG] Article found and returned.")
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(article)
+			return
+		}
+	}
+	fmt.Println("[DEBUG] Article not found in NewsAPI response.")
+	http.Error(w, "Article not found", http.StatusNotFound)
+}
+
+// Handler to summarize a news article using Gemini API
+func PostNewsSummaryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	if apiKey == "" {
+		http.Error(w, "Gemini API key not set", http.StatusInternalServerError)
+		return
+	}
+	var req struct {
+		Url     string `json:"url"`
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.Content == "" && req.Url == "" {
+		http.Error(w, "Either content or url is required", http.StatusBadRequest)
+		return
+	}
+	fmt.Println("[DEBUG] /news/summary called with url:", req.Url)
+	articleContent := req.Content
+	if articleContent == "" && req.Url != "" {
+		newsApiKey := os.Getenv("NEWS_API_KEY")
+		if newsApiKey == "" {
+			http.Error(w, "News API key not set", http.StatusInternalServerError)
+			return
+		}
+		parsed, err := url.Parse(req.Url)
+		if err == nil {
+			domain := parsed.Hostname()
+			segments := parsed.Path
+			q := ""
+			if segments != "" {
+				parts := strings.Split(segments, "/")
+				if len(parts) > 0 {
+					q = parts[len(parts)-1]
+				}
+			}
+			fmt.Printf("[DEBUG] NewsAPI everything search for summary: domain=%s, q=%s\n", domain, q)
+			articles, err := fetchEverythingFromNewsAPI(newsApiKey, q, "", domain, "", "", "en", "publishedAt", 1)
+			if err == nil {
+				for _, article := range articles {
+					if article["url"] == req.Url {
+						if desc, ok := article["description"].(string); ok && desc != "" {
+							articleContent = desc
+						} else if content, ok := article["content"].(string); ok && content != "" {
+							articleContent = content
+						}
+						break
+					}
+				}
+			} else {
+				fmt.Println("[ERROR] NewsAPI fetch error for summary:", err)
+			}
+		}
+	}
+	if articleContent == "" {
+		fmt.Println("[DEBUG] Could not fetch article content for summary.")
+		http.Error(w, "Could not fetch article content", http.StatusNotFound)
+		return
+	}
+	// Call Gemini API to summarize
+	geminiReq := map[string]interface{}{
+		"contents": []map[string]interface{}{
+			{
+				"role":  "user",
+				"parts": []string{"Summarize this news article in 5-6 lines:\n" + articleContent},
+			},
+		},
+	}
+	geminiBody, _ := json.Marshal(geminiReq)
+	geminiResp, err := http.Post("https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key="+apiKey, "application/json", strings.NewReader(string(geminiBody)))
+	if err != nil {
+		fmt.Println("[ERROR] Gemini API call error:", err)
+		http.Error(w, "Failed to call Gemini API", http.StatusInternalServerError)
+		return
+	}
+	defer geminiResp.Body.Close()
+	if geminiResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(geminiResp.Body)
+		fmt.Printf("[ERROR] Gemini API returned status %d: %s\n", geminiResp.StatusCode, string(body))
+		http.Error(w, string(body), http.StatusInternalServerError)
+		return
+	}
+	var geminiResult map[string]interface{}
+	if err := json.NewDecoder(geminiResp.Body).Decode(&geminiResult); err != nil {
+		fmt.Println("[ERROR] Failed to decode Gemini response:", err)
+		http.Error(w, "Failed to decode Gemini response", http.StatusInternalServerError)
+		return
+	}
+	// Extract summary from Gemini response
+	summary := ""
+	if candidates, ok := geminiResult["candidates"].([]interface{}); ok && len(candidates) > 0 {
+		if cand, ok := candidates[0].(map[string]interface{}); ok {
+			if content, ok := cand["content"].(map[string]interface{}); ok {
+				if parts, ok := content["parts"].([]interface{}); ok && len(parts) > 0 {
+					if part, ok := parts[0].(map[string]interface{}); ok {
+						if text, ok := part["text"].(string); ok {
+							summary = text
+						}
+					}
+				}
+			}
+		}
+	}
+	fmt.Println("[DEBUG] Gemini summary generated.")
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"summary": summary})
+}
+
+// --- Explore Handlers ---
+func GetExploreTopicsHandler(w http.ResponseWriter, r *http.Request) {
+	coll := db.MongoDatabase.Collection("topics")
+	cur, err := coll.Find(context.Background(), bson.M{})
+	if err != nil {
+		http.Error(w, "Failed to fetch topics", http.StatusInternalServerError)
+		return
+	}
+	defer cur.Close(context.Background())
+	var topics []bson.M
+	if err := cur.All(context.Background(), &topics); err != nil {
+		http.Error(w, "Failed to decode topics", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"topics": topics})
+}
+
+func GetExploreNewsByTopicHandler(w http.ResponseWriter, r *http.Request) {
+	topic := r.URL.Query().Get("topic")
+	if topic == "" {
+		http.Error(w, "Topic is required", http.StatusBadRequest)
+		return
+	}
+	coll := db.MongoDatabase.Collection("news")
+	cur, err := coll.Find(context.Background(), bson.M{"category": topic})
+	if err != nil {
+		http.Error(w, "Failed to fetch news", http.StatusInternalServerError)
+		return
+	}
+	defer cur.Close(context.Background())
+	var news []bson.M
+	if err := cur.All(context.Background(), &news); err != nil {
+		http.Error(w, "Failed to decode news", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"news": news})
+}
+
+func GetExploreTrendingHandler(w http.ResponseWriter, r *http.Request) {
+	coll := db.MongoDatabase.Collection("news")
+	cur, err := coll.Find(context.Background(), bson.M{"trending": true})
+	if err != nil {
+		http.Error(w, "Failed to fetch trending news", http.StatusInternalServerError)
+		return
+	}
+	defer cur.Close(context.Background())
+	var trending []bson.M
+	if err := cur.All(context.Background(), &trending); err != nil {
+		http.Error(w, "Failed to decode trending news", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"trending": trending})
+}
+
+func GetExploreSearchHandler(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		http.Error(w, "Query is required", http.StatusBadRequest)
+		return
+	}
+	coll := db.MongoDatabase.Collection("news")
+	filter := bson.M{"$or": []bson.M{
+		{"title": bson.M{"$regex": q, "$options": "i"}},
+		{"description": bson.M{"$regex": q, "$options": "i"}},
+		{"category": bson.M{"$regex": q, "$options": "i"}},
+	}}
+	cur, err := coll.Find(context.Background(), filter)
+	if err != nil {
+		http.Error(w, "Failed to search news", http.StatusInternalServerError)
+		return
+	}
+	defer cur.Close(context.Background())
+	var results []bson.M
+	if err := cur.All(context.Background(), &results); err != nil {
+		http.Error(w, "Failed to decode search results", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"results": results})
+}
+
+// --- Bookmark Handlers ---
+func PostAddBookmarkHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		User    string      `json:"user"`
+		Article interface{} `json:"article"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.User == "" || req.Article == nil {
+		http.Error(w, "User and article are required", http.StatusBadRequest)
+		return
+	}
+	coll := db.MongoDatabase.Collection("bookmarks")
+	// Prevent duplicate bookmarks (by user and article.url)
+	var articleUrl string
+	if artMap, ok := req.Article.(map[string]interface{}); ok {
+		if urlVal, ok := artMap["url"].(string); ok {
+			articleUrl = urlVal
+		}
+	}
+	if articleUrl != "" {
+		count, err := coll.CountDocuments(context.Background(), bson.M{"user": req.User, "article.url": articleUrl})
+		if err == nil && count > 0 {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"message": "Already bookmarked"})
+			return
+		}
+	}
+	bookmark := bson.M{
+		"user":      req.User,
+		"article":   req.Article,
+		"createdAt": time.Now(),
+	}
+	_, err := coll.InsertOne(context.Background(), bookmark)
+	if err != nil {
+		http.Error(w, "Failed to add bookmark", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Bookmark added"})
+}
+
+func PostRemoveBookmarkHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		User      string `json:"user"`
+		ArticleId string `json:"articleId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.User == "" || req.ArticleId == "" {
+		http.Error(w, "User and articleId are required", http.StatusBadRequest)
+		return
+	}
+	coll := db.MongoDatabase.Collection("bookmarks")
+	res, err := coll.DeleteOne(context.Background(), bson.M{"user": req.User, "article.url": req.ArticleId})
+	if err != nil || res.DeletedCount == 0 {
+		http.Error(w, "Failed to remove bookmark", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Bookmark removed"})
+}
+
+func GetBookmarksListHandler(w http.ResponseWriter, r *http.Request) {
+	user := r.URL.Query().Get("user")
+	if user == "" {
+		http.Error(w, "User is required", http.StatusBadRequest)
+		return
+	}
+	coll := db.MongoDatabase.Collection("bookmarks")
+	cur, err := coll.Find(context.Background(), bson.M{"user": user})
+	if err != nil {
+		http.Error(w, "Failed to fetch bookmarks", http.StatusInternalServerError)
+		return
+	}
+	defer cur.Close(context.Background())
+	var bookmarks []bson.M
+	if err := cur.All(context.Background(), &bookmarks); err != nil {
+		http.Error(w, "Failed to decode bookmarks", http.StatusInternalServerError)
+		return
+	}
+	// Only return the article field for each bookmark
+	articles := make([]interface{}, 0, len(bookmarks))
+	for _, bm := range bookmarks {
+		if art, ok := bm["article"]; ok {
+			articles = append(articles, art)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"bookmarks": articles})
+}
+
+// --- Viewed News Handlers ---
+
+// POST /viewed-news/add
+func PostViewedNewsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		User    string      `json:"user"`
+		Article interface{} `json:"article"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.User == "" || req.Article == nil {
+		http.Error(w, "User and article required", http.StatusBadRequest)
+		return
+	}
+	coll := db.MongoDatabase.Collection("viewed_news")
+	// Prevent duplicates: only one entry per user+article.url
+	filter := bson.M{"user": req.User}
+	if art, ok := req.Article.(map[string]interface{}); ok {
+		if url, ok := art["url"]; ok {
+			filter["article.url"] = url
+		}
+	}
+	update := bson.M{
+		"$set": bson.M{
+			"user":     req.User,
+			"article":  req.Article,
+			"viewedAt": time.Now(),
+		},
+	}
+	_, err := coll.UpdateOne(context.Background(), filter, update, options.Update().SetUpsert(true))
+	if err != nil {
+		http.Error(w, "Failed to save viewed news", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Viewed news saved"})
+}
+
+// GET /viewed-news/list?user=email
+func GetViewedNewsListHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+	user := r.URL.Query().Get("user")
+	if user == "" {
+		http.Error(w, "User required", http.StatusBadRequest)
+		return
+	}
+	coll := db.MongoDatabase.Collection("viewed_news")
+	cur, err := coll.Find(context.Background(), bson.M{"user": user}, options.Find().SetSort(bson.M{"viewedAt": -1}).SetLimit(20))
+	if err != nil {
+		http.Error(w, "Failed to fetch viewed news", http.StatusInternalServerError)
+		return
+	}
+	defer cur.Close(context.Background())
+	var results []bson.M
+	if err := cur.All(context.Background(), &results); err != nil {
+		http.Error(w, "Failed to decode viewed news", http.StatusInternalServerError)
+		return
+	}
+	// Return only the article objects
+	articles := make([]interface{}, 0, len(results))
+	for _, doc := range results {
+		if art, ok := doc["article"]; ok {
+			articles = append(articles, art)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"viewed": articles})
 }

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TOPICS = [
   'National',
@@ -28,6 +29,24 @@ export default function ChooseTopic() {
     setSelected(prev =>
       prev.includes(topic) ? prev.filter(t => t !== topic) : [...prev, topic]
     );
+  };
+
+  const handleNext = async () => {
+    if (selected.length === 0) return;
+    try {
+      const userStr = await AsyncStorage.getItem('user');
+      const user = userStr ? JSON.parse(userStr) : null;
+      if (user && user.email) {
+        await fetch('http://localhost:8080/update-user-details', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: user.email, categories: selected }),
+        });
+      }
+    } catch (err) {
+      // Optionally handle error
+    }
+    router.push('/choose-news-source');
   };
 
   return (
@@ -68,7 +87,7 @@ export default function ChooseTopic() {
       <TouchableOpacity
         style={[styles.nextButton, { opacity: selected.length > 0 ? 1 : 0.5 }]}
         disabled={selected.length === 0}
-        onPress={() => router.push('/choose-news-source')}
+        onPress={handleNext}
       >
         <Text style={styles.nextButtonText}>Next</Text>
       </TouchableOpacity>

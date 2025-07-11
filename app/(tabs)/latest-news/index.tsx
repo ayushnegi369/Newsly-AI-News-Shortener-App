@@ -11,34 +11,34 @@ import {
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { ThemedText } from '@/components/ThemedText';
-import useAuthGuard from '../../hooks/useAuthGuard';
+import useAuthGuard from '@/app/hooks/useAuthGuard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
-export default function TrendingScreen() {
+export default function LatestNewsScreen() {
   useAuthGuard();
   const router = useRouter();
-  const [trendingNews, setTrendingNews] = useState<any[]>([]);
+  const [latestNews, setLatestNews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchTrending = async () => {
+    const fetchLatest = async () => {
       setLoading(true);
       setError(null);
       try {
         const res = await fetch('http://localhost:8080/news');
-        if (!res.ok) throw new Error('Failed to fetch trending news');
+        if (!res.ok) throw new Error('Failed to fetch latest news');
         const data = await res.json();
-        setTrendingNews(data.trending || []);
+        setLatestNews(data.latest || []);
       } catch (err: any) {
         setError(err.message || 'Error fetching news');
       } finally {
         setLoading(false);
       }
     };
-    fetchTrending();
+    fetchLatest();
   }, []);
 
   const saveViewedNews = async (article: any) => {
@@ -82,7 +82,7 @@ export default function TrendingScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <ThemedText style={styles.headerTitle} type="subtitle">Trending</ThemedText>
+        <ThemedText style={styles.headerTitle} type="subtitle">Latest News</ThemedText>
         <TouchableOpacity>
           <MaterialIcons name="more-vert" size={24} color="#fff" />
         </TouchableOpacity>
@@ -93,7 +93,7 @@ export default function TrendingScreen() {
         <Text style={{ color: 'red', textAlign: 'center', marginTop: 40 }}>{error}</Text>
       ) : (
         <FlatList
-          data={trendingNews}
+          data={latestNews}
           renderItem={renderItem}
           keyExtractor={(_, idx) => idx.toString()}
           contentContainerStyle={{ paddingBottom: 24 }}

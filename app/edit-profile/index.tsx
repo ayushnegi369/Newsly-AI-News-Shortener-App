@@ -103,7 +103,7 @@ export default function EditProfile() {
           <Ionicons name="close" size={28} color="#fff" />
         </TouchableOpacity>
         <View style={styles.headerTitleContainer} pointerEvents="none">
-          <Text style={styles.headerTitle}>Edit Profile</Text>
+        <Text style={styles.headerTitle}>Edit Profile</Text>
         </View>
       </View>
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }} showsVerticalScrollIndicator={false}>

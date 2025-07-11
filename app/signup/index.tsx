@@ -76,7 +76,7 @@ export default function SignUp() {
             setTimeout(async () => {
               setModalVisible(false);
               await AsyncStorage.setItem('user', JSON.stringify({ email, username: name, token: idToken, firstTimeLogin: true }));
-              router.push('/choose-topic');
+              router.push('/select-country');
             }, 1200);
             setUsername('');
             setEmail('');

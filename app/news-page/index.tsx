@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,33 +10,187 @@ import {
   Platform,
   TextInput,
   FlatList,
+  Linking,
+  Alert,
 } from 'react-native';
-import { Ionicons, MaterialIcons, FontAwesome } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons, FontAwesome, Feather } from '@expo/vector-icons';
 import RBSheet from 'react-native-raw-bottom-sheet';
 import useAuthGuard from '../hooks/useAuthGuard';
+import { useLocalSearchParams } from 'expo-router';
+import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function NewsPage() {
   useAuthGuard();
-  // Mock data
+  const params = useLocalSearchParams();
+  const article = params.article ? JSON.parse(params.article as string) : null;
+  const [summary, setSummary] = useState<string | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [showSummary, setShowSummary] = useState(false);
+  const [cachedSummary, setCachedSummary] = useState<{ [key: string]: string }>({});
+
+  useEffect(() => {
+    const fetchAndSummarize = async () => {
+      setSummarizing(true);
+      setSummaryError(null);
+      try {
+        // 1. Fetch full article from backend (by url)
+        let articleData = null;
+        if (article?.url) {
+          const res = await fetch(`http://localhost:8080/news/article?url=${encodeURIComponent(article.url)}`);
+          if (res.ok) {
+            articleData = await res.json();
+          }
+        }
+        if (!articleData) {
+          articleData = article;
+        }
+        if (!articleData) throw new Error('No article data available for summary.');
+        // 2. Summarize with Cohere (ask it to extract main article text and summarize)
+        let cohereKey = undefined;
+        if (Constants.expoConfig?.extra?.COHERE_API_KEY) {
+          cohereKey = Constants.expoConfig.extra.COHERE_API_KEY;
+        } else if (
+          Constants.manifest &&
+          typeof Constants.manifest === 'object' &&
+          'extra' in Constants.manifest &&
+          (Constants.manifest as any).extra?.COHERE_API_KEY
+        ) {
+          cohereKey = (Constants.manifest as any).extra.COHERE_API_KEY;
+        }
+        if (!cohereKey) throw new Error('Cohere API key not set');
+        // Compose a prompt for Cohere to extract and summarize
+        const prompt = `Given the following JSON object from NewsAPI for a news article, extract the main article text (not just the description or title), and then summarize it in 5-6 lines. If the main article text is not present, use the most detailed available field.\n\nNewsAPI Article JSON:\n${JSON.stringify(articleData)}\n\nSummary:`;
+        const cohereRes = await fetch('https://api.cohere.ai/v1/generate', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${cohereKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'command',
+            prompt,
+            max_tokens: 300,
+            temperature: 0.3,
+            k: 0,
+            p: 0.75,
+            stop_sequences: [],
+            return_likelihoods: 'NONE'
+          })
+        });
+        if (!cohereRes.ok) {
+          const errText = await cohereRes.text();
+          throw new Error(errText || 'Failed to fetch summary');
+        }
+        const cohereData = await cohereRes.json();
+        const summaryText = cohereData.generations?.[0]?.text?.trim() || 'No summary available.';
+        setSummary(summaryText);
+        setCachedSummary(prev => ({ ...prev, [getArticleKey(article)]: summaryText }));
+        setShowSummary(true);
+      } catch (err: any) {
+        setSummaryError(err.message || 'Error fetching summary');
+      } finally {
+        setSummarizing(false);
+      }
+    };
+    fetchAndSummarize();
+  }, [article?.url, article?.description, article?.content]);
+
+  // Helper to clean up content field
+  function cleanContent(content: string | undefined) {
+    if (!content) return '';
+    return content.split('[+')[0].replace(/\{.*?\}/g, '').replace(/<.*?>/g, '').trim();
+  }
+
+  // Helper to get a unique key for caching summary per article
+  const getArticleKey = (art: any) => art?.url || art?._id || art?.title || '';
+
+  // Summarize handler (on button click)
+  const handleSummarize = async () => {
+    if (!article) return;
+    const articleKey = getArticleKey(article);
+    if (cachedSummary[articleKey]) {
+      setSummary(cachedSummary[articleKey]);
+      setShowSummary(true);
+      return;
+    }
+    setSummarizing(true);
+    setSummaryError(null);
+    try {
+      // 1. Fetch full article from backend (by url)
+      let articleData = null;
+      if (article?.url) {
+        const res = await fetch(`http://localhost:8080/news/article?url=${encodeURIComponent(article.url)}`);
+        if (res.ok) {
+          articleData = await res.json();
+        }
+      }
+      if (!articleData) {
+        articleData = article;
+      }
+      if (!articleData) throw new Error('No article data available for summary.');
+      // 2. Summarize with Cohere (ask it to extract main article text and summarize)
+      let cohereKey = undefined;
+      if (Constants.expoConfig?.extra?.COHERE_API_KEY) {
+        cohereKey = Constants.expoConfig.extra.COHERE_API_KEY;
+      } else if (
+        Constants.manifest &&
+        typeof Constants.manifest === 'object' &&
+        'extra' in Constants.manifest &&
+        (Constants.manifest as any).extra?.COHERE_API_KEY
+      ) {
+        cohereKey = (Constants.manifest as any).extra.COHERE_API_KEY;
+      }
+      if (!cohereKey) throw new Error('Cohere API key not set');
+      // Compose a prompt for Cohere to extract and summarize
+      const prompt = `Given the following JSON object from NewsAPI for a news article, extract the main article text (not just the description or title), and then summarize it in 5-6 lines. If the main article text is not present, use the most detailed available field.\n\nNewsAPI Article JSON:\n${JSON.stringify(articleData)}\n\nSummary:`;
+      const cohereRes = await fetch('https://api.cohere.ai/v1/generate', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${cohereKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'command',
+          prompt,
+          max_tokens: 300,
+          temperature: 0.3,
+          k: 0,
+          p: 0.75,
+          stop_sequences: [],
+          return_likelihoods: 'NONE'
+        })
+      });
+      if (!cohereRes.ok) {
+        const errText = await cohereRes.text();
+        throw new Error(errText || 'Failed to fetch summary');
+      }
+      const cohereData = await cohereRes.json();
+      const summaryText = cohereData.generations?.[0]?.text?.trim() || 'No summary available.';
+      setSummary(summaryText);
+      setCachedSummary(prev => ({ ...prev, [articleKey]: summaryText }));
+      setShowSummary(true);
+    } catch (err: any) {
+      setSummaryError(err.message || 'Error fetching summary');
+    } finally {
+      setSummarizing(false);
+    }
+  };
+
+  const news = article;
   const author = {
-    name: 'BBC News',
+    name: (news && (news.newsCompany || news.source?.name || news.author)) || 'Unknown',
     avatar: 'https://upload.wikimedia.org/wikipedia/commons/b/bc/BBC_News_2022_%28Alt%29.svg',
-    time: '14m ago',
+    time: news && (news.publishedAt || news.publishedAgo || ''),
     following: true,
   };
-  const news = {
-    image: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb',
-    category: 'Europe',
-    title: `Ukraine's President Zelensky to BBC: Blood money being paid for Russian oil`,
-    body: `Ukrainian President Volodymyr Zelensky has accused European countries that continue to buy Russian oil of "earning their money in other people's blood".\n\nIn an interview with the BBC, President Zelensky singled out Germany and Hungary, accusing them of blocking efforts to embargo energy sales, from which Russia stands to make up to £250bn ($326bn) this year.`,
-    likes: 24500,
-    comments: '1K',
-    bookmarked: false,
-  };
-  const [bookmarked, setBookmarked] = useState(news.bookmarked);
+  const [bookmarked, setBookmarked] = useState(false);
   const [liked, setLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(news.likes);
+  const [likeCount, setLikeCount] = useState(24500);
   const [comment, setComment] = useState('');
+  const [bookmarkLoading, setBookmarkLoading] = useState(false);
+  const [bookmarkError, setBookmarkError] = useState<string | null>(null);
   const rbSheetRef = useRef<any>(null);
 
   // Mock comments data
@@ -150,6 +304,58 @@ export default function NewsPage() {
     </View>
   );
 
+  const API_BASE = 'http://localhost:8080';
+
+  // Add bookmark logic
+  const handleBookmark = async () => {
+    setBookmarkLoading(true);
+    setBookmarkError(null);
+    try {
+      const userStr = await AsyncStorage.getItem('user');
+      let email = null;
+      try {
+        const userObj = userStr ? JSON.parse(userStr) : null;
+        email = userObj?.email || null;
+      } catch {}
+      if (!email) throw new Error('User not found');
+      if (!bookmarked) {
+        const res = await fetch(`${API_BASE}/bookmarks/add`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user: email, article })
+        });
+        const data = await res.json();
+        if (data.message === 'Already bookmarked') {
+          setBookmarked(true);
+          Alert.alert('Already Bookmarked', 'This article is already in your bookmarks.');
+        } else if (data.message === 'Bookmark added') {
+          setBookmarked(true);
+          Alert.alert('Bookmarked', 'Article added to your bookmarks.');
+        } else {
+          throw new Error('Failed to add bookmark');
+        }
+      } else {
+        // Remove bookmark
+        const res = await fetch(`${API_BASE}/bookmarks/remove`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user: email, articleId: article.url || article._id })
+        });
+        const data = await res.json();
+        if (data.message === 'Bookmark removed') {
+          setBookmarked(false);
+          Alert.alert('Bookmark Removed', 'Article removed from your bookmarks.');
+        } else {
+          throw new Error('Failed to remove bookmark');
+        }
+      }
+    } catch (err: any) {
+      setBookmarkError(err.message || 'Bookmark error');
+    } finally {
+      setBookmarkLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }} showsVerticalScrollIndicator={false}>
@@ -178,14 +384,58 @@ export default function NewsPage() {
             <Text style={styles.followBtnText}>Following</Text>
           </TouchableOpacity>
         </View>
-        {/* News Image */}
-        <Image source={{ uri: news.image }} style={styles.newsImage} />
-        {/* News Content */}
-        <View style={styles.contentBox}>
-          <Text style={styles.category}>{news.category}</Text>
-          <Text style={styles.title}>{news.title}</Text>
-          <Text style={styles.body}>{news.body}</Text>
-        </View>
+        {/* News Content & Summary */}
+        {news && (
+          <View style={styles.contentBox}>
+            <Text style={styles.category}>{news.country || ((news as any).source && (news as any).source.name) || ''}</Text>
+            <Text style={styles.title}>{news.title}</Text>
+            {/* News Company */}
+            <Text style={styles.source}>{news.newsCompany || ((news as any).source && (news as any).source.name) || (news as any).author || ''}</Text>
+            <Text style={styles.time}>{news.publishedAgo || (news as any).publishedAt || ''}</Text>
+            {/* News Image */}
+            {((news as any).urlToImage || news.image) && (
+              <Image source={{ uri: (news as any).urlToImage || news.image }} style={styles.newsImage} />
+            )}
+            {/* Article Body or Summary */}
+            {!showSummary ? (
+              <Text style={styles.body}>
+                {((news as any).content && ((news as any).content as string).trim()) ||
+                  (news as any).description ||
+                  cleanContent((news as any).content) ||
+                  'No article content available.'}
+              </Text>
+            ) : (
+              <View style={{ backgroundColor: '#23252B', borderRadius: 8, padding: 12, marginTop: 8 }}>
+                {summarizing ? (
+                  <Text style={{ color: '#fff', fontSize: 16 }}>Summarizing...</Text>
+                ) : summary ? (
+                  <>
+                    <Text style={{ color: '#fff', fontSize: 15 }}>{summary}</Text>
+                    <Text style={{ color: '#888', fontSize: 13, marginTop: 8, textAlign: 'right' }}>Powered by Cohere</Text>
+                  </>
+                ) : summaryError ? (
+                  <Text style={{ color: 'red', fontSize: 15 }}>{summaryError}</Text>
+                ) : null}
+              </View>
+            )}
+            {(news as any).url && (
+              <TouchableOpacity onPress={() => Linking.openURL((news as any).url)} style={{ marginTop: 12 }}>
+                <Text style={{ color: '#2979FF', fontWeight: 'bold', fontSize: 16 }}>Read Full Article</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+        {/* Floating Summarize Button */}
+        {!showSummary && !summarizing && (
+          <TouchableOpacity
+            style={styles.fab}
+            onPress={handleSummarize}
+            activeOpacity={0.8}
+          >
+            <Feather name="zap" size={24} color="#fff" />
+            <Text style={{ color: '#fff', fontWeight: 'bold', marginLeft: 8 }}>Summarize</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
       {/* Bottom Bar */}
       <View style={styles.bottomBar}>
@@ -202,12 +452,13 @@ export default function NewsPage() {
           </TouchableOpacity>
           <TouchableOpacity style={[styles.bottomItem, { marginLeft: 18 }]} onPress={openSheet}>
             <Ionicons name="chatbubble-outline" size={20} color="#fff" style={{ marginRight: 6 }} />
-            <Text style={styles.bottomText}>{news.comments}</Text>
+            <Text style={styles.bottomText}>{news && (news as any).comments ? (news as any).comments : '1K'}</Text>
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.bottomItem} onPress={() => setBookmarked(b => !b)}>
-          <Ionicons name={bookmarked ? 'bookmark' : 'bookmark-outline'} size={22} color="#2563eb" />
+        <TouchableOpacity style={styles.bottomItem} onPress={handleBookmark}>
+          <Ionicons name={bookmarked ? 'bookmark' : 'bookmark-outline'} size={22} color={bookmarked ? '#2563eb' : '#2563eb'} />
         </TouchableOpacity>
+        {bookmarkError && <Text style={{ color: 'red', marginLeft: 8 }}>{bookmarkError}</Text>}
       </View>
       {/* Comments Bottom Sheet */}
       <RBSheet
@@ -332,6 +583,16 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 10,
     marginTop: 2,
+  },
+  source: {
+    color: '#B0B3B8',
+    fontSize: 14,
+    marginBottom: 2,
+  },
+  time: {
+    color: '#B0B3B8',
+    fontSize: 13,
+    marginBottom: 8,
   },
   body: {
     color: '#B0B3B8',
@@ -476,5 +737,22 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 8,
     marginLeft: 8,
+  },
+  fab: {
+    position: 'absolute',
+    right: 24,
+    bottom: 100,
+    backgroundColor: '#2563eb',
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    zIndex: 100,
   },
 });
