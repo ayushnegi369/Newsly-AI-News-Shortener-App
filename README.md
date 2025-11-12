@@ -1,5 +1,7 @@
 # Welcome to your Expo app 👋
 
+Demo Preview Link : https://www.linkedin.com/posts/ayush-negi-8965a1189_ai-reactnative-go-activity-7349410836152545280-YHTe?utm_source=share&utm_medium=member_desktop&rcm=ACoAACxnQbIBxocmbt3ty7SO0SjrIAgl-XxnW3g
+
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
 ## Get started
